@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test (${{ matrix.compiler }}, ASan + UBSan)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libclang-rt-18-dev
+      - name: Configure
+        env:
+          CXX: ${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }}
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMT_SANITIZE=ON -DMT_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build
+      - name: Unit tests and real-capture test
+        run: ctest --test-dir build --output-on-failure
+
+  crosscheck:
+    name: Cross-check against pyais
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Build decoder
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMT_BUILD_TESTS=OFF
+          cmake --build build --target mt-decode
+      - name: Decode the recorded traffic with both decoders and compare
+        run: |
+          pip install pyais==3.2.3
+          ./build/mt-decode < testdata/pyais-nmea-sample.nmea > mt.jsonl
+          python3 tools/crosscheck.py testdata/pyais-nmea-sample.nmea mt.jsonl
+
+  fuzz:
+    name: Fuzz (libFuzzer, 60 s per target)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libclang-rt-18-dev
+      - name: Build fuzzers
+        env:
+          CXX: clang++
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMT_BUILD_TESTS=OFF -DMT_BUILD_FUZZERS=ON
+          cmake --build build --target fuzz_decoder fuzz_payload
+      - name: Fuzz the stream decoder, seeded with recorded traffic
+        run: |
+          mkdir -p corpus && head -n 2000 testdata/pyais-nmea-sample.nmea | split -l 20 - corpus/seed-
+          ./build/fuzz_decoder -max_total_time=60 -max_len=4096 corpus
+      - name: Fuzz the message decoders
+        run: |
+          mkdir -p corpus-payload
+          ./build/fuzz_payload -max_total_time=60 -max_len=256 corpus-payload
+
+  lint:
+    name: clang-tidy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-tidy
+      - name: Configure
+        env:
+          CXX: clang++
+        run: cmake -S . -B build -G Ninja -DMT_BUILD_TESTS=OFF
+      - name: clang-tidy
+        run: run-clang-tidy -p build -quiet -warnings-as-errors='*' 'src/|apps/'
