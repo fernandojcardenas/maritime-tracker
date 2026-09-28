@@ -1,0 +1,25 @@
+# Real run, 2026-09-28, Linux development container (Ubuntu 24.04, GCC 13, ASan+UBSan Debug build).
+# Command: python3 tools/fake_feed.py testdata/pyais-nmea-sample.nmea --connections 3 &
+#          ./build/mt-ingest --tcp 127.0.0.1:5631 --record /tmp/rec2 --stats-every 2 --duration 8
+# fake_feed.py output:
+#   connection 1: closed after 3034 lines total
+#   connection 2: closed after 6068 lines total
+#   connection 3: closed after 9102 lines total
+# mt-ingest stderr:
+[2.0 s] lines 4570  msgs 4473  msg/s 2236.1  vessels 3616  queue-dropped 0  connects 2  connect-failures 0  peer-closes 1  idle-timeouts 0  recorded 4570
+[4.2 s] lines 9102  msgs 8898  msg/s 2017.0  vessels 5186  queue-dropped 0  connects 3  connect-failures 1  peer-closes 3  idle-timeouts 0  recorded 9102
+[6.2 s] lines 9102  msgs 8898  msg/s 0.0  vessels 5186  queue-dropped 0  connects 3  connect-failures 2  peer-closes 3  idle-timeouts 0  recorded 9102
+[8.2 s] lines 9102  msgs 8898  msg/s 0.0  vessels 5186  queue-dropped 0  connects 3  connect-failures 3  peer-closes 3  idle-timeouts 0  recorded 9102
+[8.3 s] lines 9102  msgs 8898  msg/s 0.0  vessels 5186  queue-dropped 0  connects 3  connect-failures 3  peer-closes 3  idle-timeouts 0  recorded 9102
+--- final ---
+lines            9102
+sentences ok     9102
+messages         8898
+unique MMSIs     5186
+fragments dropped 0
+decode too short 0
+decode invalid   0
+unknown type     0
+by type: 1=6653 2=175 3=963 4=446 5=185 6=56 8=110 9=3 10=2 11=3 16=1 17=37 18=137 19=14 20=39 21=57 22=8 24=9
+queue dropped    0
+recorded 9102 lines into 1 file(s), write errors 0

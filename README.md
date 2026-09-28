@@ -9,7 +9,7 @@ clean tracks, flags suspicious behaviour and scores collision risk.
 It runs entirely on public data: no radio hardware is needed. A Raspberry Pi
 with an RTL-SDR receiver can be added later as one more input.
 
-**Status:** milestone 1 of 7, the decoder. See the [roadmap](docs/roadmap.md).
+**Status:** milestone 1 (decoder) done; milestone 2 (live ingest and replay) built and tested, with the one-hour run against the live feed still to do. See the [roadmap](docs/roadmap.md).
 
 ## Why
 
@@ -48,15 +48,47 @@ parse error bad_fill_bits: 8
 by type: 1=61374 2=1973 3=8785 4=4043 5=2221 6=435 8=1082 9=27 10=7 11=28 16=1 17=314 18=1361 19=109 20=276 21=380 22=23 24=307 25=2
 ```
 
+## Ingest and replay (M2)
+
+`mt-ingest` reads a live TCP feed or a recorded file, decodes it, and can
+record what it receives for later replay.
+
+```
+mt-ingest --tcp 153.44.253.27:5631 --record recordings/        # live, recorded hourly
+mt-ingest --replay recordings/ais-20260928-17.nmea --speed 60  # one hour per minute
+mt-ingest --tcp 153.44.253.27:5631 --duration 3600             # one-hour unattended run
+```
+
+- **Reconnects forever.** Connect failures, peer closes, read errors and
+  silent connections (no bytes for 30 s) all lead to a reconnect with
+  exponential backoff and random jitter, capped at 30 s. Each cause is
+  counted separately.
+- **Bounded everywhere.** Lines over 1,024 bytes are discarded by the framer,
+  and a fixed-size queue sits between the network thread and the decoder. If
+  decoding falls behind, the oldest lines are dropped and counted instead of
+  stalling the socket. See [ADR 0002](docs/adr/0002-ingest-threading-and-backpressure.md).
+- **Recording and replay.** Recordings rotate hourly and every line gets a
+  receive timestamp. Replay paces lines by those timestamps at any speed,
+  shortens long outages, and never rewinds on out-of-order timestamps. Time is
+  injected, so the pacing tests run instantly.
+
+A local run against [`tools/fake_feed.py`](tools/fake_feed.py), which serves
+recorded traffic in split chunks and drops the connection every 3,034 lines:
+all 9,102 lines arrived across 3 connections, 0 were dropped, and replaying the
+recording produced exactly the same decoded messages as decoding the source
+file directly. Full output: [docs/evidence/m2-fake-feed-run.txt](docs/evidence/m2-fake-feed-run.txt).
+
 ## How it's tested
 
 | Check | What it proves | Where |
 |---|---|---|
-| 40 unit tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction | `tests/` |
+| 58 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation | `tests/` |
+| Fake-feed TCP tests | Split lines, peer disconnect, silent connection, refused connect, prompt shutdown, against a real socket on loopback | `tests/tcp_source_test.cpp` |
 | Recorded-traffic test | Exact counts on 85,194 lines of real AIS, including its malformed sentences | `tests/capture_test.cpp` |
 | Cross-check against pyais | Every decoded field of 76,130 messages matches an independent open-source decoder | `tools/crosscheck.py` |
 | ASan + UBSan | No memory errors or undefined behaviour, with GCC and Clang | CI `test` job |
-| Two libFuzzer targets | Arbitrary bytes into the stream decoder and into the message decoders | `fuzz/`, CI `fuzz` job |
+| ThreadSanitizer | No data races in the reader thread, queue and TCP client; threaded tests repeated 20 times | CI `tsan` job |
+| Three libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, and the line framer under arbitrary TCP chunking | `fuzz/`, CI `fuzz` job |
 | clang-tidy | bugprone, cert, performance, modernize and readability checks, warnings as errors | `.clang-tidy`, CI `lint` job |
 
 The cross-check found four real problems during development, all fixed:
@@ -84,13 +116,14 @@ with libFuzzer), `-DMT_WARNINGS_AS_ERRORS=ON`.
 
 ```
 include/maritime/   public headers: nmea/, ais/, util/
-src/                parser, bit reader, message decoders, stream decoder
+src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder)
 apps/mt-decode/     command-line decoder
+apps/mt-ingest/     live/replay ingest with recording
 tests/              unit tests and the recorded-traffic test
 fuzz/               libFuzzer targets
-tools/              cross-check against pyais
+tools/              cross-check against pyais, fake TCP feed
 testdata/           recorded AIS traffic (MIT, from pyais)
-docs/               roadmap, data sources, architecture decisions
+docs/               roadmap, data sources, architecture decisions, evidence from real runs
 ```
 
 ## Data and scope
