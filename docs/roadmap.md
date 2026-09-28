@@ -1,0 +1,20 @@
+# Roadmap
+
+The goal is a real-time vessel tracking service that turns a raw AIS feed into
+clean tracks, flags suspicious behaviour and scores collision risk. It needs no
+hardware: all input comes from public AIS data. A Raspberry Pi with an RTL-SDR
+receiver can be added later as one more input, producing the same NMEA
+sentences.
+
+| Milestone | What it adds | Status |
+|---|---|---|
+| M1 Decoder | NMEA/AIVDM parser, tag blocks, multi-fragment reassembly, message types 1–3, 5, 18, 19, 24; unit tests, a real-capture test, a cross-check against an independent decoder, two fuzz targets | In progress |
+| M2 Ingest | Live TCP client for the Norwegian open feed with reconnect and backpressure; replay of recorded files at real or accelerated speed | Planned |
+| M3 Tracker | Per-vessel Kalman filter (constant-velocity model), gating and track management, handling of stale and "dark" vessels | Planned |
+| M4 Anomalies | Position jumps, impossible speed, reporting gaps, identity conflicts (one MMSI in two places); scored against labelled cases from Danish historical data | Planned |
+| M5 Collision risk | Closest point of approach (CPA/TCPA) for nearby pairs; encounter classification under COLREGs rules 13–15 (overtaking, head-on, crossing) | Planned |
+| M6 Spatial index | Uniform grid vs k-d tree for neighbour queries, with benchmarks and profiler output | Planned |
+| M7 API and map | WebSocket API and a browser map; Docker image; recorded demo from a real session | Planned |
+
+Later, optional: decode AIS directly from public IQ recordings (signal
+processing), and an RTL-SDR receiver as a live input.
