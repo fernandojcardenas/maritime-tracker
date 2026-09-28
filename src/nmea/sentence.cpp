@@ -68,6 +68,8 @@ bool valid_armor_char(char c) {
     return (c >= '0' && c <= 'W') || (c >= '`' && c <= 'w');
 }
 
+}  // namespace
+
 Expected<TagBlock, ParseError> parse_tag_block(std::string_view content) {
     bool had_star = false;
     const auto body = verify_checksum(content, had_star);
@@ -92,8 +94,6 @@ Expected<TagBlock, ParseError> parse_tag_block(std::string_view content) {
     }
     return tag;
 }
-
-}  // namespace
 
 std::string_view to_string(ParseError e) noexcept {
     switch (e) {

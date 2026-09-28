@@ -49,6 +49,10 @@ struct Sentence {
 // XOR of all bytes in `body` (the text between the start char and '*').
 [[nodiscard]] std::uint8_t checksum(std::string_view body) noexcept;
 
+// Parse the content of a tag block: the text between the two backslashes,
+// including its "*hh" checksum, e.g. "s:2573485,c:1727366000*0B".
+[[nodiscard]] Expected<TagBlock, ParseError> parse_tag_block(std::string_view content);
+
 // Parse one line. Trailing "\r\n" and whitespace are ignored.
 [[nodiscard]] Expected<Sentence, ParseError> parse_sentence(std::string_view line);
 
