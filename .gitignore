@@ -1,0 +1,12 @@
+build*/
+.cache/
+compile_commands.json
+*.jsonl
+corpus*/
+crash-*
+leak-*
+timeout-*
+.DS_Store
+.vscode/
+.idea/
+__pycache__/
