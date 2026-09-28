@@ -29,6 +29,24 @@ jobs:
       - name: Unit tests and real-capture test
         run: ctest --test-dir build --output-on-failure
 
+  tsan:
+    name: Build and test (clang, ThreadSanitizer)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libclang-rt-18-dev
+      - name: Configure
+        env:
+          CXX: clang++
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMT_TSAN=ON -DMT_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: cmake --build build
+      - name: Tests, threaded ones repeated 20 times
+        run: |
+          ctest --test-dir build --output-on-failure
+          ./build/mt_tests --gtest_repeat=20 --gtest_filter='TcpSource.*:BoundedQueue.*'
+
   crosscheck:
     name: Cross-check against pyais
     runs-on: ubuntu-24.04
@@ -48,7 +66,7 @@ jobs:
           python3 tools/crosscheck.py testdata/pyais-nmea-sample.nmea mt.jsonl
 
   fuzz:
-    name: Fuzz (libFuzzer, 60 s per target)
+    name: Fuzz (libFuzzer, 3 targets, 60 s each)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -59,7 +77,7 @@ jobs:
           CXX: clang++
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMT_BUILD_TESTS=OFF -DMT_BUILD_FUZZERS=ON
-          cmake --build build --target fuzz_decoder fuzz_payload
+          cmake --build build --target fuzz_decoder fuzz_payload fuzz_framer
       - name: Fuzz the stream decoder, seeded with recorded traffic
         run: |
           mkdir -p corpus && head -n 2000 testdata/pyais-nmea-sample.nmea | split -l 20 - corpus/seed-
@@ -68,6 +86,10 @@ jobs:
         run: |
           mkdir -p corpus-payload
           ./build/fuzz_payload -max_total_time=60 -max_len=256 corpus-payload
+      - name: Fuzz the line framer with arbitrary TCP chunking
+        run: |
+          mkdir -p corpus-framer && head -c 20000 testdata/pyais-nmea-sample.nmea > corpus-framer/seed
+          ./build/fuzz_framer -max_total_time=60 -max_len=4096 corpus-framer
 
   lint:
     name: clang-tidy
