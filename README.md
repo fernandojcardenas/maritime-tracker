@@ -9,7 +9,7 @@ clean tracks, flags suspicious behaviour and scores collision risk.
 It runs entirely on public data: no radio hardware is needed. A Raspberry Pi
 with an RTL-SDR receiver can be added later as one more input.
 
-**Status:** milestones 1 (decoder), 2 (live ingest and replay) and 3 (tracker) done. See the [roadmap](docs/roadmap.md).
+**Status:** milestones 1 (decoder), 2 (live ingest and replay), 3 (tracker) and 4 (anomalies) done. See the [roadmap](docs/roadmap.md).
 
 ## Why
 
@@ -133,20 +133,71 @@ tools/fetch_dk_slice.sh data/oresund.csv          # 830 MB download, SHA-256 che
 ./build/mt-track --dk-csv data/oresund.csv --eval-from 1776862800 --eval-to 1776866400 --pos-sigma 5
 ```
 
+## Anomalies (M4)
+
+The detector flags four kinds of behaviour, each a physical limit that a
+person can check by hand ([ADR 0004](docs/adr/0004-anomaly-rules.md)):
+
+| Flag | Raised when |
+|---|---|
+| Impossible speed | The vessel reports more than 50 kn |
+| Position jump | The vessel is farther from its last position than it could have travelled |
+| Gap | A vessel that was moving and heard regularly goes quiet for 10 minutes while the receivers are working |
+| Identity conflict | One MMSI keeps reporting from two places that cannot both be right: two transmitters, one identity |
+
+It was evaluated on four slices of real Danish traffic by planting 100
+labelled cases of each kind into each slice (seeded, reproducible) and
+counting how many it finds. The last slice was run once, after the rules were
+frozen:
+
+| Planted case | Øresund | Great Belt | Skagen | Bornholm (hold-out) |
+|---|---:|---:|---:|---:|
+| Impossible speed (55–100 kn) | 100% | 100% | 100% | 100% |
+| Position jump (3–30 km) | 100% | 100% | 100% | 100% |
+| Gap (15–40 min) | 97% | 82%\* | 100% | 100% |
+| Identity conflict (second transmitter 5+ km away) | 98% | 99% | 99% | 100% |
+| Flags on the data as recorded | 5 | 1 | 4 | 0 |
+
+\* Every missed gap on the Great Belt overlaps a 10-minute receiver outage in
+that slice; silence while the receivers are down is not counted, by design.
+
+The real flags are the faults and habits real AIS contains: harbour boats
+switching off at the quay, a GPS glitch, a fishing vessel reporting 65.7 kn.
+Real data also shaped the rules. A receiver outage made 10 vessels "go dark"
+at once. Three search-and-rescue helicopters produced 67 speed and jump flags
+in the live hour. Satellite passes made dozens of Arctic vessels "reappear"
+together. Each is now handled by an explicit rule, with a test. Detection
+has limits: jumps under about 2 km between sparse reports are often
+physically possible, so only half of 0.5–1 km jumps are found. The
+[anomaly evaluation](docs/anomaly-evaluation.md) has the method, every flag
+explained, the sensitivity tables and the limitations.
+
+The detector also runs live inside `mt-ingest`. On the one-hour Norwegian
+recording it raises 2 speed flags and 13 gaps, down from 199 flags before
+those rules. It gives the same result on the stream in arrival order as the
+offline tool gives on sorted data.
+
+```
+tools/fetch_dk_slice.sh data/oresund-2026-04-22.csv data/    # all four slices
+tools/evaluate_anomalies.sh build/mt-anomaly data/
+tools/barentswatch_stream.sh | mt-ingest --stdin --format barentswatch --anomalies anomalies.jsonl
+```
+
 ## How it's tested
 
 | Check | What it proves | Where |
 |---|---|---|
-| 85 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring; JSON records and ISO 8601 times | `tests/` |
+| 101 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring; JSON records and ISO 8601 times; every anomaly rule and its exceptions (outages, coverage returning, aircraft, repeated transmissions) | `tests/` |
 | Tracker evaluation on real data | Held-out prediction error against two baselines, and outlier rejection; fails CI on regression | `tools/evaluate_tracker.sh`, `evaluate` workflow |
+| Anomaly evaluation on real data | Planted anomalies found and false alarms on four slices of Danish traffic; fails CI on regression | `tools/evaluate_anomalies.sh`, `evaluate` workflow |
 | Fake-feed TCP tests | Split lines, peer disconnect, silent connection, refused connect, prompt shutdown, against a real socket on loopback | `tests/tcp_source_test.cpp` |
 | Recorded-traffic test | Exact counts on 85,194 lines of real AIS, including its malformed sentences | `tests/capture_test.cpp` |
 | Cross-check against pyais | Every decoded field of 76,130 messages matches an independent open-source decoder | `tools/crosscheck.py` |
 | ASan + UBSan | No memory errors or undefined behaviour, with GCC and Clang | CI `test` job |
 | ThreadSanitizer | No data races in the reader thread, queue and TCP client; threaded tests repeated 20 times | CI `tsan` job |
-| Five libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, the line framer under arbitrary TCP chunking, and the parsers for downloaded CSV and streamed JSON | `fuzz/`, CI `fuzz` job |
+| Six libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, the line framer under arbitrary TCP chunking, and the parsers for downloaded CSV and streamed JSON; arbitrary report sequences into the anomaly detector | `fuzz/`, CI `fuzz` job |
 | Live-API bridge test | Token, stream, token expiry, reconnect and clean shutdown against a fake server; the secret must not appear in any output; a 200,000-line replay must lose nothing | CI `barentswatch-bridge` job |
-| Live-data test | 5,000 real records from the one-hour live run parse and track with pinned counts | `tests/barentswatch_test.cpp` |
+| Live-data test | 5,000 real records from the one-hour live run parse, track and pass the anomaly rules with pinned counts | `tests/barentswatch_test.cpp`, `tests/anomaly_test.cpp` |
 | clang-tidy | bugprone, cert, performance, modernize and readability checks, warnings as errors | `.clang-tidy`, CI `lint` job |
 
 The cross-check found four real problems during development, all fixed:
@@ -173,15 +224,16 @@ with libFuzzer), `-DMT_WARNINGS_AS_ERRORS=ON`.
 ## Layout
 
 ```
-include/maritime/   public headers: nmea/, ais/, util/
-src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder), tracker
+include/maritime/   public headers: nmea/, ais/, ingest/, track/, anomaly/, util/
+src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder), tracker, anomaly detector
 apps/mt-decode/     command-line decoder
 apps/mt-ingest/     live/replay ingest with recording
 apps/mt-track/      tracker evaluation on recorded traffic
+apps/mt-anomaly/    anomaly detection and evaluation on recorded traffic
 tests/              unit tests and the recorded-traffic test
 fuzz/               libFuzzer targets
-tools/              cross-check against pyais, fake TCP feed and fake live API, live stream script, data fetch, tracker evaluation
-testdata/           recorded AIS traffic (MIT, from pyais)
+tools/              cross-check against pyais, fake TCP feed and fake live API, live stream script, data fetch, tracker and anomaly evaluations
+testdata/           recorded AIS traffic (MIT, from pyais) and 5,000 live records (NLOD)
 docs/               roadmap, data sources, architecture decisions, evidence from real runs
 ```
 

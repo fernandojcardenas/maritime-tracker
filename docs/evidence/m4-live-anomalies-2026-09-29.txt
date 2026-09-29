@@ -1,0 +1,42 @@
+# Anomaly detection on the one-hour live recording, 2026-09-29
+#
+# Source:   BarentsWatch Live AIS API (Norwegian open AIS data, NLOD licence),
+#           recorded by Live feed run #3 (see m2-live-run-2026-09-29.txt).
+#           Contains data under the Norwegian licence for Open Government data
+#           (NLOD) made available by the Norwegian Coastal Administration.
+# Command:  cat recordings/*.jsonl > live.jsonl
+#           mt-ingest --replay live.jsonl --format barentswatch --speed 0 \
+#                     --listening-since 1790689162 --anomalies anomalies.jsonl
+#           (1790689162 = 13:39:22 UTC, when the recording started; silences
+#           that began before it are not judged.)
+#
+# mt-ingest processes the records in arrival order, as it would live.
+#
+# --- final lines of mt-ingest's output ---
+--- final ---
+lines            132270
+messages         132270
+unique MMSIs     3752
+no position      0
+invalid records  0
+tracker          4064 tracks started, 127927 updates, 279 gate rejections, 22 restarts, 0 duplicates, 0 out of order
+anomalies        2 impossible speed, 0 position jumps, 13 gaps, 0 identity conflicts
+not flagged      290 silences begun before listening, 19 coverage returned, 0 network outage, 36 not heard regularly; 141 SAR aircraft reports
+queue dropped    0
+replay lines 132270, timestamped 0, gaps shortened 0, backwards timestamps 0
+# --- anomalies.jsonl ---
+{"kind":"impossible_speed","mmsi":273265590,"t":1790682846,"lat":74.18431,"lon":33.402465,"value":102.2,"distance_m":0}
+{"kind":"impossible_speed","mmsi":257089980,"t":1790689515,"lat":62.465103,"lon":6.189797,"value":51.3,"distance_m":0}
+{"kind":"gap","mmsi":257429900,"t":1790690238,"lat":62.72396,"lon":6.958787,"value":750,"distance_m":919.4386692}
+{"kind":"gap","mmsi":258472000,"t":1790690419,"lat":68.67666667,"lon":16.04666667,"value":686,"distance_m":267.6768855}
+{"kind":"gap","mmsi":257153500,"t":1790690443,"lat":74.97666667,"lon":17.51833333,"value":782.9760914,"distance_m":1754.114358}
+{"kind":"gap","mmsi":259027600,"t":1790690556,"lat":62.266785,"lon":7.170538,"value":664,"distance_m":269.4595291}
+{"kind":"gap","mmsi":231020000,"t":1790691228,"lat":64.35833333,"lon":3.61,"value":790,"distance_m":2505.404634}
+{"kind":"gap","mmsi":258027760,"t":1790691408,"lat":64.31833333,"lon":10.45166667,"value":609,"distance_m":725.7657818}
+{"kind":"gap","mmsi":538010307,"t":1790691432,"lat":71.095968,"lon":19.198912,"value":649,"distance_m":3373.465361}
+{"kind":"gap","mmsi":314869000,"t":1790691863,"lat":67.04504,"lon":8.488973,"value":621.3901155,"distance_m":3775.901579}
+{"kind":"gap","mmsi":257321400,"t":1790691942,"lat":60.486417,"lon":7.087755,"value":1459,"distance_m":665.8019424}
+{"kind":"gap","mmsi":257908600,"t":1790692120,"lat":61.885712,"lon":5.330058,"value":1520,"distance_m":1086.793873}
+{"kind":"gap","mmsi":259050130,"t":1790692492,"lat":69.96552,"lon":20.979482,"value":620,"distance_m":2181.405353}
+{"kind":"gap","mmsi":257293400,"t":1790692563,"lat":69.78535,"lon":20.6146,"value":922,"distance_m":1026.841546}
+{"kind":"gap","mmsi":259439000,"t":1790692718,"lat":60.063,"lon":5.919933,"value":889,"distance_m":74.13435946}

@@ -24,7 +24,9 @@ Notes:
 - The Norwegian open feed excludes fishing vessels under 15 m and recreational
   craft under 45 m (Kystverket, checked 2026-09-28).
 - The Danish files are used offline for repeatable evaluation of the tracker
-  and anomaly rules (milestones M3–M4). The M3 evaluation uses 2026-04-22.
+  and anomaly rules (milestones M3–M4). Both use 2026-04-22: M3 the Øresund
+  strait, M4 the Øresund, Great Belt, Skagen and Bornholm slices (areas and
+  times in [anomaly-evaluation.md](anomaly-evaluation.md)).
 - Everything in this repository comes from these public sources. No data from
   any government or military system is used.
 

@@ -32,4 +32,5 @@ made available by the Norwegian Coastal Administration (Kystverket) via
 BarentsWatch. The open data excludes fishing vessels under 15 m and leisure
 craft under 45 m.
 
-Used by `tests/barentswatch_test.cpp` (parser and tracker counts on live data).
+Used by `tests/barentswatch_test.cpp` (parser and tracker counts on live data)
+and `tests/anomaly_test.cpp` (the anomaly rules on live data).
