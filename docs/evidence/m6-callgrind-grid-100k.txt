@@ -1,0 +1,41 @@
+# Callgrind profile of the grid pair search, 100,000 vessels
+#
+# valgrind --tool=callgrind --toggle-collect='*pairs_within*' \
+#     mt-bench --barentswatch norway-live-2026-09-29.jsonl --profile grid 100000
+# Build: CMake RelWithDebInfo. Only instructions inside pairs_within are counted
+# (loading the recording is excluded). Instructions, not time: cache misses do not show.
+#
+# grid on 100000 vessels: 1083581 pairs, 2108042 distance checks; convert 307.5 ms, search 631.2 ms, sort 643.1 ms
+# (times above were measured under valgrind, which runs code several times slower; see the benchmark for real times)
+# Instructions in pairs_within: 280203417
+#
+# Hottest source lines of src/spatial/pairs.cpp (share of those instructions):
+  7.3%  if (dist2(p[entries[a].idx], p[entries[b].idx]) <= c2) out.push_back(ordered(entries[a].idx, entries[b].idx));
+  3.8%  return dx * dx + dy * dy + dz * dz;
+  3.1%  for (const auto& pr : pairs) sorted[next[pr.first]++] = pr;
+  2.3%  for (const auto& pr : pairs) ++start[pr.first + 1];
+  2.1%  for (std::size_t b = it->second.first; b < it->second.second; ++b) check(a, b);
+  1.6%  if (nkey <= key) continue;
+  1.5%  const double dz = a.z - b.z;
+  1.5%  const double dy = a.y - b.y;
+  1.5%  const double dx = a.x - b.x;
+  1.5%  ++s.distance_checks;
+  1.4%  return a < b ? std::make_pair(a, b) : std::make_pair(b, a);
+  1.1%  for (std::int64_t dz = -1; dz <= 1; ++dz) {
+  1.0%  static_cast<std::uint64_t>(iz + kBias);
+  0.9%  std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) { return a.key < b.key; });
+  0.9%  for (std::size_t a = range.first; a < range.second; ++a) {
+#
+# By function (inlined code is attributed to its caller):
+ 35.34%  pairs.cpp: maritime::spatial::pairs_within
+ 11.31%  compare: maritime::spatial::pairs_within
+  5.69%  stl_pair.h: maritime::spatial::pairs_within
+  4.82%  s_sin.c: __sincos_fma
+  4.18%  stl_vector.h: maritime::spatial::pairs_within
+  3.57%  stl_uninitialized.h: maritime::spatial::pairs_within
+  3.34%  compare: void std::__introsort_loop
+  2.98%  s_sincos.c: __sincos_fma
+  2.67%  stl_iterator.h: maritime::spatial::pairs_within
+  2.49%  stl_algo.h: maritime::spatial::pairs_within
+  2.27%  stl_construct.h: maritime::spatial::pairs_within
+  2.00%  vector.tcc: maritime::spatial::pairs_within

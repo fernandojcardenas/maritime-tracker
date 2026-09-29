@@ -1,7 +1,7 @@
 # ADR 0005: Straight-line CPA and geometric COLREGs roles, checked against behaviour
 
 Date: 2026-09-29
-Status: Accepted
+Status: Accepted; the pair search ("sweep over latitude" below) is superseded by [ADR 0006](0006-spatial-index.md)
 
 ## Context
 

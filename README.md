@@ -9,7 +9,7 @@ clean tracks, flags suspicious behaviour and scores collision risk.
 It runs entirely on public data: no radio hardware is needed. A Raspberry Pi
 with an RTL-SDR receiver can be added later as one more input.
 
-**Status:** milestones 1 (decoder), 2 (live ingest and replay), 3 (tracker), 4 (anomalies) and 5 (collision risk) done. See the [roadmap](docs/roadmap.md).
+**Status:** milestones 1 (decoder), 2 (live ingest and replay), 3 (tracker), 4 (anomalies), 5 (collision risk) and 6 (spatial index) done. See the [roadmap](docs/roadmap.md).
 
 ## Why
 
@@ -230,20 +230,50 @@ tools/evaluate_collision_risk.sh build/mt-risk data/
 tools/barentswatch_stream.sh | mt-ingest --stdin --format barentswatch --encounters encounters.jsonl
 ```
 
+## Spatial index (M6)
+
+Collision risk needs every pair of vessels within 6 nm, every minute. Four
+ways of finding them were built and measured: brute force, a sweep over
+latitude, a uniform grid and a k-d tree, the last two in Earth-centred 3D
+coordinates so the date line and the poles need no special cases. All four
+return identical pairs; tests, a fuzz target and every benchmark run check it
+([ADR 0006](docs/adr/0006-spatial-index.md)).
+
+| Vessels at once | Latitude sweep | Grid | k-d tree |
+|---|---:|---:|---:|
+| 3,752 (the whole Norwegian live hour) | 2.3 ms | 2.2 ms | 4.4 ms |
+| 100,000 (global feed, synthetic) | 109 ms | 74 ms | 130 ms |
+| 1,000,000 (global feed, synthetic) | 4,354 ms | **1,046 ms** | 1,578 ms |
+
+At real feed sizes any method takes a few milliseconds; at a million vessels
+the grid is four times faster than the sweep. Profiling showed that the
+largest single cost was not the search but sorting the 11.5 million pairs it
+found; a linear-time bucket sort cut the grid's time at a million vessels
+from 1.7 s to 1.0 s. A cache-locality change that made no measurable
+difference was reverted. In very dense ports brute force is fastest, since
+there is little to prune. The [benchmark](docs/spatial-index-benchmark.md)
+has every workload, the profile and the limitations.
+
+```
+build/mt-bench --dk-csv data/oresund-2026-04-22.csv --barentswatch live.jsonl
+build/mt-bench --barentswatch live.jsonl --profile grid 1000000   # time per phase
+```
+
 ## How it's tested
 
 | Check | What it proves | Where |
 |---|---|---|
-| 112 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring; JSON records and ISO 8601 times; every anomaly rule and its exceptions (outages, coverage returning, aircraft, repeated transmissions); CPA/TCPA, the COLREGs sectors on both sides of each boundary, and role symmetry over 20,000 random pairs | `tests/` |
+| 120 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring; JSON records and ISO 8601 times; every anomaly rule and its exceptions (outages, coverage returning, aircraft, repeated transmissions); CPA/TCPA, the COLREGs sectors on both sides of each boundary, and role symmetry over 20,000 random pairs; the four pair-search methods against brute force and an independent great-circle check, at the date line and the poles | `tests/` |
 | Tracker evaluation on real data | Held-out prediction error against two baselines, and outlier rejection; fails CI on regression | `tools/evaluate_tracker.sh`, `evaluate` workflow |
 | Anomaly evaluation on real data | Planted anomalies found and false alarms on four slices of Danish traffic; fails CI on regression | `tools/evaluate_anomalies.sh`, `evaluate` workflow |
+| Pair-search benchmark | All four methods return identical pairs on real traffic and up to 100,000 vessels; timings in the job summary | `apps/mt-bench`, CI `benchmark` job |
 | Collision-risk evaluation on real data | Predicted CPA against the real pass, and COLREGs roles against what vessels did; fails CI on regression | `tools/evaluate_collision_risk.sh`, `evaluate` workflow |
 | Fake-feed TCP tests | Split lines, peer disconnect, silent connection, refused connect, prompt shutdown, against a real socket on loopback | `tests/tcp_source_test.cpp` |
 | Recorded-traffic test | Exact counts on 85,194 lines of real AIS, including its malformed sentences | `tests/capture_test.cpp` |
 | Cross-check against pyais | Every decoded field of 76,130 messages matches an independent open-source decoder | `tools/crosscheck.py` |
 | ASan + UBSan | No memory errors or undefined behaviour, with GCC and Clang | CI `test` job |
 | ThreadSanitizer | No data races in the reader thread, queue and TCP client; threaded tests repeated 20 times | CI `tsan` job |
-| Seven libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, the line framer under arbitrary TCP chunking, and the parsers for downloaded CSV and streamed JSON; arbitrary report sequences into the anomaly detector; arbitrary positions and velocities into collision risk | `fuzz/`, CI `fuzz` job |
+| Eight libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, the line framer under arbitrary TCP chunking, and the parsers for downloaded CSV and streamed JSON; arbitrary report sequences into the anomaly detector; arbitrary positions and velocities into collision risk; every pair-search method against brute force | `fuzz/`, CI `fuzz` job |
 | Live-API bridge test | Token, stream, token expiry, reconnect and clean shutdown against a fake server; the secret must not appear in any output; a 200,000-line replay must lose nothing | CI `barentswatch-bridge` job |
 | Live-data test | 5,000 real records from the one-hour live run parse, track and pass the anomaly rules with pinned counts | `tests/barentswatch_test.cpp`, `tests/anomaly_test.cpp` |
 | clang-tidy | bugprone, cert, performance, modernize and readability checks, warnings as errors | `.clang-tidy`, CI `lint` job |
@@ -272,13 +302,14 @@ with libFuzzer), `-DMT_WARNINGS_AS_ERRORS=ON`.
 ## Layout
 
 ```
-include/maritime/   public headers: nmea/, ais/, ingest/, track/, anomaly/, risk/, util/
-src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder), tracker, anomaly detector, collision risk
+include/maritime/   public headers: nmea/, ais/, ingest/, track/, anomaly/, risk/, spatial/, util/
+src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder), tracker, anomaly detector, collision risk, pair search
 apps/mt-decode/     command-line decoder
 apps/mt-ingest/     live/replay ingest with recording
 apps/mt-track/      tracker evaluation on recorded traffic
 apps/mt-anomaly/    anomaly detection and evaluation on recorded traffic
 apps/mt-risk/       collision-risk evaluation on recorded traffic
+apps/mt-bench/      pair-search benchmark
 tests/              unit tests and the recorded-traffic test
 fuzz/               libFuzzer targets
 tools/              cross-check against pyais, fake TCP feed and fake live API, live stream script, data fetch, tracker, anomaly and collision-risk evaluations
