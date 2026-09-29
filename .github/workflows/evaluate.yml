@@ -1,8 +1,9 @@
 name: Tracker evaluation
 
 # Downloads real Danish AIS data (about 830 MB, cached after the first run),
-# runs the tracker evaluation (docs/tracker-evaluation.md) and the anomaly
-# evaluation (docs/anomaly-evaluation.md), and fails if the headline results
+# runs the tracker evaluation (docs/tracker-evaluation.md), the anomaly
+# evaluation (docs/anomaly-evaluation.md) and the collision-risk evaluation
+# (docs/collision-risk-evaluation.md), and fails if the headline results
 # regress.
 on:
   workflow_dispatch:
@@ -18,6 +19,10 @@ on:
       - "include/maritime/anomaly/**"
       - "apps/mt-anomaly/**"
       - "tools/evaluate_anomalies.sh"
+      - "src/risk/**"
+      - "include/maritime/risk/**"
+      - "apps/mt-risk/**"
+      - "tools/evaluate_collision_risk.sh"
 
 permissions:
   contents: read
@@ -39,7 +44,7 @@ jobs:
       - name: Build
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMT_BUILD_TESTS=OFF
-          cmake --build build --target mt-track mt-anomaly
+          cmake --build build --target mt-track mt-anomaly mt-risk
       # pipefail: without it a failing check would be hidden by tee.
       - name: Evaluate the tracker
         run: |
@@ -49,6 +54,10 @@ jobs:
         run: |
           set -o pipefail
           tools/evaluate_anomalies.sh build/mt-anomaly data/ | tee anomaly-evaluation.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Evaluate collision risk
+        run: |
+          set -o pipefail
+          tools/evaluate_collision_risk.sh build/mt-risk data/ | tee collision-risk-evaluation.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -56,3 +65,4 @@ jobs:
           path: |
             evaluation.md
             anomaly-evaluation.md
+            collision-risk-evaluation.md

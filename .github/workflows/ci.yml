@@ -66,7 +66,7 @@ jobs:
           python3 tools/crosscheck.py testdata/pyais-nmea-sample.nmea mt.jsonl
 
   fuzz:
-    name: Fuzz (libFuzzer, 6 targets, 60 s each)
+    name: Fuzz (libFuzzer, 7 targets, 60 s each)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -77,7 +77,7 @@ jobs:
           CXX: clang++
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMT_BUILD_TESTS=OFF -DMT_BUILD_FUZZERS=ON
-          cmake --build build --target fuzz_decoder fuzz_payload fuzz_framer fuzz_dk_csv fuzz_barentswatch fuzz_anomaly
+          cmake --build build --target fuzz_decoder fuzz_payload fuzz_framer fuzz_dk_csv fuzz_barentswatch fuzz_anomaly fuzz_collision
       - name: Fuzz the stream decoder, seeded with recorded traffic
         run: |
           mkdir -p corpus && head -n 2000 testdata/pyais-nmea-sample.nmea | split -l 20 - corpus/seed-
@@ -104,6 +104,10 @@ jobs:
         run: |
           mkdir -p corpus-anomaly
           ./build/fuzz_anomaly -max_total_time=60 -max_len=4096 corpus-anomaly
+      - name: Fuzz collision risk with arbitrary positions and velocities
+        run: |
+          mkdir -p corpus-collision
+          ./build/fuzz_collision -max_total_time=60 -max_len=4096 corpus-collision
 
   barentswatch-bridge:
     name: BarentsWatch bridge against a fake server
