@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>maritime-tracker live map</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map" aria-label="Map of vessel tracks"></div>
+<aside id="panel">
+  <h1>maritime-tracker</h1>
+  <p id="status" class="status connecting">connecting…</p>
+  <p id="clock" class="clock">–</p>
+  <dl id="totals">
+    <dt>Vessels</dt><dd id="t-tracks">–</dd>
+    <dt>Messages</dt><dd id="t-messages">–</dd>
+    <dt>Anomalies</dt><dd id="t-anomalies">–</dd>
+    <dt>Encounters</dt><dd id="t-encounters">–</dd>
+  </dl>
+  <h2>At risk now <span id="n-encounters" class="count"></span></h2>
+  <ol id="encounters" class="items"></ol>
+  <h2>Recent anomalies <span id="n-anomalies" class="count"></span></h2>
+  <ol id="anomalies" class="items"></ol>
+  <p class="legend">
+    <span class="dot moving"></span>under way
+    <span class="dot still"></span>stopped
+    <span class="dot risk"></span>at risk
+    <span class="dot flag"></span>flagged
+  </p>
+  <p class="credits">Coastline: Natural Earth. AIS: the source this server reads (BarentsWatch data under NLOD).</p>
+</aside>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

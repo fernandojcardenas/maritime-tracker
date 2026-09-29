@@ -1,0 +1,2 @@
+# The live map is built into the binary byte for byte: keep Unix line endings.
+web/** text eol=lf

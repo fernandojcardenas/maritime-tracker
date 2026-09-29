@@ -1,0 +1,49 @@
+:root {
+  --sea: #0e1f2f;
+  --land: #26394a;
+  --coast: #3d5870;
+  --panel: #0a1520ee;
+  --text: #dbe6ef;
+  --muted: #8aa0b2;
+  --moving: #5cc8ff;
+  --still: #7d8c99;
+  --risk: #ffb347;
+  --flag: #ff5c5c;
+  --ok: #57d68d;
+}
+html, body { margin: 0; height: 100%; background: var(--sea); color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+#map { position: absolute; inset: 0; background: var(--sea); }
+.leaflet-container { background: var(--sea); }
+#panel { position: absolute; top: 12px; right: 12px; bottom: 12px; width: 300px; overflow-y: auto; z-index: 1000;
+  background: var(--panel); border-radius: 8px; padding: 12px 16px; box-shadow: 0 2px 12px #0008; }
+h1 { font-size: 17px; margin: 0 0 4px; }
+h2 { font-size: 13px; margin: 16px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.count { color: var(--text); }
+.status { margin: 0; font-weight: 600; }
+.status.connecting { color: var(--risk); }
+.status.live { color: var(--ok); }
+.status.lost { color: var(--flag); }
+.clock { margin: 2px 0 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; }
+dt { color: var(--muted); }
+dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.items { list-style: none; margin: 0; padding: 0; max-height: 28vh; overflow-y: auto; }
+.items li { padding: 4px 6px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.items li:hover, .items li:focus { background: #ffffff14; outline: none; }
+.items .what { font-weight: 600; }
+.items .detail { color: var(--muted); }
+.items .empty { color: var(--muted); cursor: default; }
+.legend { margin-top: 16px; color: var(--muted); font-size: 12px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 4px 0 10px; vertical-align: -1px; }
+.dot:first-child { margin-left: 0; }
+.dot.moving { background: var(--moving); }
+.dot.still { background: var(--still); }
+.dot.risk { background: var(--risk); }
+.dot.flag { background: var(--flag); }
+.credits { color: var(--muted); font-size: 11px; margin-top: 8px; }
+.leaflet-tooltip { background: var(--panel); color: var(--text); border: 0; box-shadow: 0 1px 6px #0008; }
+.leaflet-tooltip-top:before { border-top-color: var(--panel); }
+@media (max-width: 700px) {
+  #panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 40vh; }
+}

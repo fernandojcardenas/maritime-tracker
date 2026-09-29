@@ -60,9 +60,25 @@ add_library(maritime
   src/track/barentswatch.cpp
   src/anomaly/detector.cpp
   src/risk/collision.cpp
-  src/spatial/pairs.cpp)
+  src/spatial/pairs.cpp
+  src/serve/websocket.cpp
+  src/serve/server.cpp
+  src/serve/feed.cpp)
 target_include_directories(maritime PUBLIC include)
 target_link_libraries(maritime PUBLIC Threads::Threads PRIVATE mt_warnings nlohmann_json::nlohmann_json)
+
+# The live map's files, built into the binary.
+set(MT_WEB_FILES index.html app.js style.css land.json vendor/leaflet/leaflet.js vendor/leaflet/leaflet.css
+                 vendor/leaflet/LICENSE)
+list(TRANSFORM MT_WEB_FILES PREPEND "${CMAKE_CURRENT_SOURCE_DIR}/web/" OUTPUT_VARIABLE MT_WEB_PATHS)
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/web_assets.cpp
+  COMMAND ${CMAKE_COMMAND} -DWEB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/web -DOUT=${CMAKE_CURRENT_BINARY_DIR}/web_assets.cpp
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_web.cmake
+  DEPENDS ${MT_WEB_PATHS} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_web.cmake
+  COMMENT "Embedding web/ into the binary")
+add_library(maritime_web ${CMAKE_CURRENT_BINARY_DIR}/web_assets.cpp)
+target_link_libraries(maritime_web PUBLIC maritime)
 
 add_executable(mt-decode apps/mt-decode/main.cpp)
 target_link_libraries(mt-decode PRIVATE maritime mt_warnings)
@@ -80,7 +96,7 @@ add_executable(mt-bench apps/mt-bench/main.cpp)
 target_link_libraries(mt-bench PRIVATE maritime mt_warnings)
 
 add_executable(mt-ingest apps/mt-ingest/main.cpp)
-target_link_libraries(mt-ingest PRIVATE maritime mt_warnings)
+target_link_libraries(mt-ingest PRIVATE maritime maritime_web mt_warnings)
 
 if(MT_BUILD_TESTS)
   FetchContent_Declare(googletest
@@ -102,15 +118,17 @@ if(MT_BUILD_TESTS)
     tests/barentswatch_test.cpp
     tests/anomaly_test.cpp
     tests/collision_test.cpp
-    tests/spatial_test.cpp)
-  target_link_libraries(mt_tests PRIVATE maritime GTest::gtest_main)
-  target_compile_definitions(mt_tests PRIVATE MT_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
+    tests/spatial_test.cpp
+    tests/serve_test.cpp)
+  target_link_libraries(mt_tests PRIVATE maritime maritime_web GTest::gtest_main nlohmann_json::nlohmann_json)
+  target_compile_definitions(mt_tests PRIVATE MT_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata"
+                                             MT_WEB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/web")
   include(GoogleTest)
   gtest_discover_tests(mt_tests)
 endif()
 
 if(MT_BUILD_FUZZERS)
-  foreach(target fuzz_decoder fuzz_payload fuzz_framer fuzz_dk_csv fuzz_barentswatch fuzz_anomaly fuzz_collision fuzz_spatial)
+  foreach(target fuzz_decoder fuzz_payload fuzz_framer fuzz_dk_csv fuzz_barentswatch fuzz_anomaly fuzz_collision fuzz_spatial fuzz_websocket)
     add_executable(${target} fuzz/${target}.cpp)
     target_compile_options(${target} PRIVATE -fsanitize=fuzzer)
     target_link_options(${target} PRIVATE -fsanitize=fuzzer)
