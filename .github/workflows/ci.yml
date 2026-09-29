@@ -45,7 +45,7 @@ jobs:
       - name: Tests, threaded ones repeated 20 times
         run: |
           ctest --test-dir build --output-on-failure
-          ./build/mt_tests --gtest_repeat=20 --gtest_filter='TcpSource.*:BoundedQueue.*'
+          ./build/mt_tests --gtest_repeat=20 --gtest_filter='TcpSource.*:BoundedQueue.*:Server.*-Server.DropsAClientThatFallsBehind'
 
   crosscheck:
     name: Cross-check against pyais
@@ -66,7 +66,7 @@ jobs:
           python3 tools/crosscheck.py testdata/pyais-nmea-sample.nmea mt.jsonl
 
   fuzz:
-    name: Fuzz (libFuzzer, 8 targets, 60 s each)
+    name: Fuzz (libFuzzer, 9 targets, 60 s each)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -77,7 +77,7 @@ jobs:
           CXX: clang++
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMT_BUILD_TESTS=OFF -DMT_BUILD_FUZZERS=ON
-          cmake --build build --target fuzz_decoder fuzz_payload fuzz_framer fuzz_dk_csv fuzz_barentswatch fuzz_anomaly fuzz_collision fuzz_spatial
+          cmake --build build --target fuzz_decoder fuzz_payload fuzz_framer fuzz_dk_csv fuzz_barentswatch fuzz_anomaly fuzz_collision fuzz_spatial fuzz_websocket
       - name: Fuzz the stream decoder, seeded with recorded traffic
         run: |
           mkdir -p corpus && head -n 2000 testdata/pyais-nmea-sample.nmea | split -l 20 - corpus/seed-
@@ -112,6 +112,10 @@ jobs:
         run: |
           mkdir -p corpus-spatial
           ./build/fuzz_spatial -max_total_time=60 -max_len=4096 corpus-spatial
+      - name: Fuzz the HTTP request parser and WebSocket frame parser
+        run: |
+          mkdir -p corpus-websocket
+          ./build/fuzz_websocket -max_total_time=60 -max_len=16384 corpus-websocket
 
   benchmark:
     name: Pair-search benchmark (all methods must agree)
@@ -185,6 +189,25 @@ jobs:
           test "$a" = "$b"
           test "$(awk '/^queue dropped/ {print $3}' r1.log)" -eq 0
           test "$(awk '/^lines/ {print $2}' r1.log | tail -1)" -eq 200000
+
+  docker:
+    name: Docker image and live map (built, run, checked from outside)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the image
+        run: docker build -t maritime-tracker .
+      - name: Run it and check the page, the files and the WebSocket feed
+        run: |
+          docker run -d --name mt -p 8080:8080 maritime-tracker
+          for i in $(seq 30); do curl -fs -o /dev/null http://127.0.0.1:8080/ && break; sleep 1; done
+          python3 tools/check_live_map.py http://127.0.0.1:8080/ --min-tracks 50 --updates 3
+          test "$(docker exec mt id -u)" != 0                          # not running as root
+          docker stop -t 5 mt                                          # SIGTERM reaches mt-ingest
+          test "$(docker inspect -f '{{.State.ExitCode}}' mt)" -eq 0
+          docker logs mt 2>&1 | tail -12
+          docker logs mt 2>&1 | grep -q '0 dropped as too slow, 0 protocol errors'
+          echo "Image size: $(docker image inspect -f '{{.Size}}' maritime-tracker | numfmt --to=iec)" >> "$GITHUB_STEP_SUMMARY"
 
   lint:
     name: clang-tidy

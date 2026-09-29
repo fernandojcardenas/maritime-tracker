@@ -1,0 +1,11 @@
+# Only what the image build copies; keeps local build trees and data out of the context.
+*
+!CMakeLists.txt
+!cmake/
+!include/
+!src/
+!apps/
+!web/
+!tools/barentswatch_stream.sh
+!docker/entrypoint.sh
+!testdata/barentswatch-live-2026-09-29.jsonl
