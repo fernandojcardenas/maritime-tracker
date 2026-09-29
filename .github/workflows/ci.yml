@@ -66,7 +66,7 @@ jobs:
           python3 tools/crosscheck.py testdata/pyais-nmea-sample.nmea mt.jsonl
 
   fuzz:
-    name: Fuzz (libFuzzer, 7 targets, 60 s each)
+    name: Fuzz (libFuzzer, 8 targets, 60 s each)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -77,7 +77,7 @@ jobs:
           CXX: clang++
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMT_BUILD_TESTS=OFF -DMT_BUILD_FUZZERS=ON
-          cmake --build build --target fuzz_decoder fuzz_payload fuzz_framer fuzz_dk_csv fuzz_barentswatch fuzz_anomaly fuzz_collision
+          cmake --build build --target fuzz_decoder fuzz_payload fuzz_framer fuzz_dk_csv fuzz_barentswatch fuzz_anomaly fuzz_collision fuzz_spatial
       - name: Fuzz the stream decoder, seeded with recorded traffic
         run: |
           mkdir -p corpus && head -n 2000 testdata/pyais-nmea-sample.nmea | split -l 20 - corpus/seed-
@@ -108,6 +108,26 @@ jobs:
         run: |
           mkdir -p corpus-collision
           ./build/fuzz_collision -max_total_time=60 -max_len=4096 corpus-collision
+      - name: Fuzz the pair search against brute force
+        run: |
+          mkdir -p corpus-spatial
+          ./build/fuzz_spatial -max_total_time=60 -max_len=4096 corpus-spatial
+
+  benchmark:
+    name: Pair-search benchmark (all methods must agree)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build mt-bench
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMT_BUILD_TESTS=OFF
+          cmake --build build --target mt-bench
+      # Fails if any method returns different pairs. Timings on shared runners
+      # vary too much to assert on; they go to the job summary.
+      - name: Benchmark on the live-data test slice, scaled to 100,000 vessels
+        run: |
+          set -o pipefail
+          ./build/mt-bench --barentswatch testdata/barentswatch-live-2026-09-29.jsonl --quick | tee -a "$GITHUB_STEP_SUMMARY"
 
   barentswatch-bridge:
     name: BarentsWatch bridge against a fake server
