@@ -1,6 +1,7 @@
-// Replays a recorded NMEA file, pacing lines by their tag-block timestamps
-// (the "c:" field) so recorded traffic arrives as it did live, optionally
-// sped up. Time is injected through Clock so tests run instantly.
+// Replays a recorded file, pacing lines by their timestamps so recorded
+// traffic arrives as it did live, optionally sped up. NMEA lines are timed by
+// their tag block (the "c:" field); other formats pass ReplayOptions::time_of.
+// Time is injected through Clock so tests run instantly.
 #pragma once
 
 #include <atomic>
@@ -33,6 +34,8 @@ struct ReplayOptions {
     // Gaps in the recording longer than this (in recorded time) are
     // shortened to it, so a receiver outage doesn't stall the replay.
     std::chrono::seconds max_gap{60};
+    // Where a line's time comes from. Empty: the NMEA tag block (tag_block_time).
+    std::function<std::optional<std::int64_t>(std::string_view)> time_of;
 };
 
 struct ReplayStats {

@@ -13,6 +13,7 @@
 #include "maritime/ingest/line_framer.hpp"
 #include "maritime/ingest/recorder.hpp"
 #include "maritime/ingest/replay.hpp"
+#include "maritime/track/barentswatch.hpp"
 #include "maritime/nmea/sentence.hpp"
 
 using namespace maritime::ingest;
@@ -168,6 +169,26 @@ TEST(Replay, PacesByTimestampAtSpeed) {
     EXPECT_EQ(stats.timestamped, 3U);
     // 0 s, 1 s and 10 s of recorded time at 10x speed.
     EXPECT_EQ(clock.sleeps, (std::vector<std::chrono::milliseconds>{0ms, 100ms, 1000ms}));
+}
+
+TEST(Replay, PacesJsonRecordsByTheirOwnTime) {
+    // BarentsWatch records carry their time in "msgtime"; replay paces by it.
+    std::stringstream in;
+    in << R"({"mmsi":1,"msgtime":"2026-09-29T13:40:00+00:00"})" << '\n'
+       << R"({"mmsi":2,"msgtime":"2026-09-29T13:40:04.5+00:00"})" << '\n'
+       << R"({"mmsi":3,"no time":1})" << '\n'
+       << R"({"mmsi":4,"msgtime":"2026-09-29T13:40:20Z"})" << '\n';
+    FakeClock clock;
+    const std::atomic<bool> stop{false};
+    ReplayOptions o;
+    o.speed = 4.0;
+    o.time_of = maritime::track::barentswatch_time;
+    std::size_t n = 0;
+    const auto stats = replay(in, o, clock, [&](std::string_view) { ++n; }, stop);
+    EXPECT_EQ(n, 4U);
+    EXPECT_EQ(stats.timestamped, 3U);
+    // 0, 4 and 20 s of recorded time (whole seconds) at 4x speed.
+    EXPECT_EQ(clock.sleeps, (std::vector<std::chrono::milliseconds>{0ms, 1000ms, 5000ms}));
 }
 
 TEST(Replay, ShortensLongGaps) {

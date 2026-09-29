@@ -36,7 +36,7 @@ ReplayStats replay(std::istream& in, const ReplayOptions& options, Clock& clock,
     while (!stop.load(std::memory_order_relaxed) && std::getline(in, line)) {
         ++stats.lines;
         if (paced) {
-            if (const auto ts = tag_block_time(line)) {
+            if (const auto ts = options.time_of ? options.time_of(line) : tag_block_time(line)) {
                 const std::int64_t t = ts.value();
                 ++stats.timestamped;
                 if (!have_first) {

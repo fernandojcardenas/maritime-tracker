@@ -118,4 +118,16 @@ BwResult parse_barentswatch(std::string_view line) {
     return {BwParse::Fix, f};
 }
 
+std::optional<std::int64_t> barentswatch_time(std::string_view line) {
+    constexpr std::string_view kKey = R"("msgtime":")";
+    const auto at = line.find(kKey);
+    if (at == std::string_view::npos) return std::nullopt;
+    const auto start = at + kKey.size();
+    const auto end = line.find('"', start);
+    if (end == std::string_view::npos) return std::nullopt;
+    const auto t = parse_iso8601(line.substr(start, end - start));
+    if (!t) return std::nullopt;
+    return static_cast<std::int64_t>(std::floor(*t));
+}
+
 }  // namespace maritime::track

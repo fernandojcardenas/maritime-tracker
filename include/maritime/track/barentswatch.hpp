@@ -34,4 +34,8 @@ struct BwResult {
 // tolerated. Never throws.
 [[nodiscard]] BwResult parse_barentswatch(std::string_view line);
 
+// The record's "msgtime" in whole Unix seconds, found without parsing the
+// whole record (for pacing a replay). nullopt if absent or malformed.
+[[nodiscard]] std::optional<std::int64_t> barentswatch_time(std::string_view line);
+
 }  // namespace maritime::track
