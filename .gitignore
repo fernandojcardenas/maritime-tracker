@@ -11,3 +11,4 @@ timeout-*
 .idea/
 __pycache__/
 data/
+!testdata/*.jsonl

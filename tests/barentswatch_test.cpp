@@ -2,6 +2,10 @@
 
 #include <gtest/gtest.h>
 
+#include <fstream>
+#include <set>
+#include <string>
+
 using namespace maritime::track;
 
 TEST(Iso8601, ParsesOffsetsZuluAndFractions) {
@@ -74,4 +78,35 @@ TEST(BarentsWatch, RejectsInvalidRecords) {
               BwParse::Invalid);
     EXPECT_EQ(parse_barentswatch(R"({"latitude":60,"longitude":5,"mmsi":2.5,"msgtime":"2026-04-22T12:00:00Z"})").kind,
               BwParse::Invalid);
+}
+
+// Real records from the BarentsWatch Live AIS API, recorded on 2026-09-29
+// (testdata/barentswatch-live-2026-09-29.jsonl, NLOD licence, see
+// testdata/README.md). Pins the parser's behaviour on live data.
+TEST(BarentsWatch, ParsesRecordedLiveSlice) {
+    std::ifstream in(std::string(MT_TESTDATA_DIR) + "/barentswatch-live-2026-09-29.jsonl");
+    ASSERT_TRUE(in) << "missing testdata/barentswatch-live-2026-09-29.jsonl";
+    std::string line;
+    std::size_t lines = 0;
+    std::size_t fixes = 0;
+    std::size_t with_velocity = 0;
+    std::set<std::uint32_t> mmsis;
+    Tracker tracker;
+    while (std::getline(in, line)) {
+        ++lines;
+        const auto r = parse_barentswatch(line);
+        ASSERT_NE(r.kind, BwParse::Invalid) << "line " << lines;
+        if (r.kind != BwParse::Fix) continue;
+        ++fixes;
+        if (r.fix->sog_knots) ++with_velocity;
+        mmsis.insert(r.fix->mmsi);
+        (void)tracker.add(*r.fix);
+    }
+    EXPECT_EQ(lines, 5000U);
+    EXPECT_EQ(fixes, 5000U);
+    EXPECT_EQ(mmsis.size(), 3036U);
+    EXPECT_GT(with_velocity, 4000U);
+    EXPECT_EQ(tracker.stats().started, 3036U);
+    EXPECT_EQ(tracker.stats().updated, 1960U);
+    EXPECT_EQ(tracker.stats().rejected, 4U);
 }

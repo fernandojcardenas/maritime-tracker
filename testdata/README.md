@@ -20,5 +20,16 @@ It is used by:
 - `tools/crosscheck.py` in CI: field-by-field comparison with pyais;
 - the CI fuzz job: the first 2,000 lines seed the stream-decoder fuzzer.
 
-Live data from the Norwegian Coastal Administration feed (see
-[docs/data-sources.md](../docs/data-sources.md)) is the input for milestone M2.
+## barentswatch-live-2026-09-29.jsonl
+
+5,000 consecutive records (13:59–14:01 UTC, 3,036 vessels) from the one-hour
+live run of 2026-09-29, recorded from the BarentsWatch Live AIS API exactly as
+received, one JSON object per line. SHA-256
+`5eee807193ee58cba7a36726082e4cb33a15e69939f478b7a8348cfe49366151`.
+
+Contains data under the Norwegian licence for Open Government data (NLOD),
+made available by the Norwegian Coastal Administration (Kystverket) via
+BarentsWatch. The open data excludes fishing vessels under 15 m and leisure
+craft under 45 m.
+
+Used by `tests/barentswatch_test.cpp` (parser and tracker counts on live data).
