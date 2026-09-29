@@ -1,9 +1,12 @@
-// mt-ingest: read AIS from a live TCP feed or a recorded file, decode it, and
-// optionally record the raw lines for later replay.
+// mt-ingest: read AIS from a live TCP feed, stdin or a recorded file, decode
+// it, track vessels, and optionally record the raw lines for later replay.
 //
 //   mt-ingest --tcp 153.44.253.27:5631 --record recordings/
 //   mt-ingest --replay recordings/ais-20260928-17.nmea --speed 60 --json > messages.jsonl
-//   mt-ingest --tcp 153.44.253.27:5631 --duration 3600      # one-hour unattended run
+//   tools/barentswatch_stream.sh | mt-ingest --stdin --format barentswatch --duration 3600
+//
+// Formats: "nmea" (raw !AIVDM sentences, the default) or "barentswatch"
+// (one JSON record per line from the BarentsWatch Live AIS API).
 //
 // A reader thread (network or file) feeds a bounded queue; the main thread
 // decodes. If decoding falls behind, the oldest lines are dropped and counted
@@ -26,9 +29,12 @@
 #include "maritime/ais/decoder.hpp"
 #include "maritime/ais/json.hpp"
 #include "maritime/ingest/bounded_queue.hpp"
+#include "maritime/ingest/fd_source.hpp"
 #include "maritime/ingest/recorder.hpp"
 #include "maritime/ingest/replay.hpp"
 #include "maritime/ingest/tcp_source.hpp"
+#include "maritime/track/barentswatch.hpp"
+#include "maritime/track/tracker.hpp"
 
 namespace {
 
@@ -47,6 +53,8 @@ struct Item {
 struct Args {
     std::optional<std::string> tcp;  // host:port
     std::optional<std::string> replay_file;
+    bool stdin_source = false;
+    bool barentswatch = false;  // --format barentswatch
     double speed = 1.0;
     std::optional<std::string> record_dir;
     bool json = false;
@@ -56,9 +64,11 @@ struct Args {
 };
 
 void usage() {
-    std::cerr << "usage: mt-ingest (--tcp HOST:PORT | --replay FILE [--speed N]) [--record DIR] [--json]\n"
+    std::cerr << "usage: mt-ingest (--tcp HOST:PORT | --stdin | --replay FILE [--speed N])\n"
+                 "                 [--format nmea|barentswatch] [--record DIR] [--json]\n"
                  "                 [--stats-every SECONDS] [--duration SECONDS] [--queue N]\n"
-                 "  --speed 0 replays as fast as possible; 1 is real time (default)\n";
+                 "  --speed 0 replays as fast as possible; 1 is real time (default). NMEA replay is\n"
+                 "  paced by tag-block time; barentswatch replay is not paced.\n";
 }
 
 std::optional<Args> parse_args(int argc, char** argv) {
@@ -71,6 +81,10 @@ std::optional<Args> parse_args(int argc, char** argv) {
         };
         if (arg == "--json") {
             a.json = true;
+            continue;
+        }
+        if (arg == "--stdin") {
+            a.stdin_source = true;
             continue;
         }
         const std::optional<std::string> v = next();
@@ -89,13 +103,15 @@ std::optional<Args> parse_args(int argc, char** argv) {
             a.duration = seconds(std::stol(*v));
         } else if (arg == "--queue") {
             a.queue_capacity = std::stoul(*v);
+        } else if (arg == "--format") {
+            if (*v != "nmea" && *v != "barentswatch") return std::nullopt;
+            a.barentswatch = *v == "barentswatch";
         } else {
             return std::nullopt;
         }
     }
-    if (a.tcp.has_value() == a.replay_file.has_value() || a.speed < 0 || a.stats_every.count() <= 0) {
-        return std::nullopt;
-    }
+    const int sources = (a.tcp ? 1 : 0) + (a.replay_file ? 1 : 0) + (a.stdin_source ? 1 : 0);
+    if (sources != 1 || a.speed < 0 || a.stats_every.count() <= 0) return std::nullopt;
     if (a.tcp && a.tcp->rfind(':') == std::string::npos) return std::nullopt;
     return a;
 }
@@ -130,6 +146,12 @@ int run(int argc, char** argv) {
             reader_done = true;
             queue.close();
         });
+    } else if (args->stdin_source) {
+        reader = std::thread([&] {
+            ingest::read_lines(0, g_stop, [&](std::string_view l) { queue.push(Item{std::string(l), unix_now()}); });
+            reader_done = true;
+            queue.close();
+        });
     } else {
         reader = std::thread([&] {
             std::ifstream in(*args->replay_file);
@@ -147,23 +169,44 @@ int run(int argc, char** argv) {
     }
 
     std::optional<ingest::Recorder> recorder;
-    if (args->record_dir) recorder.emplace(*args->record_dir);
+    if (args->record_dir) {
+        ingest::RecorderOptions ro;
+        if (args->barentswatch) ro = {".jsonl", false};
+        recorder.emplace(*args->record_dir, ro);
+    }
 
     std::ios::sync_with_stdio(false);
     ais::Decoder decoder;
+    track::Tracker tracker;
     std::set<std::uint32_t> mmsis;
+    // Counters for the barentswatch format (the NMEA decoder keeps its own).
+    std::uint64_t bw_lines = 0;
+    std::uint64_t bw_fixes = 0;
+    std::uint64_t bw_no_position = 0;
+    std::uint64_t bw_invalid = 0;
+    double next_expire = 0.0;
+    const auto track_fix = [&](const track::Fix& f) {
+        if (f.t >= next_expire) {
+            tracker.expire(f.t);
+            next_expire = f.t + 60.0;
+        }
+        (void)tracker.add(f);
+    };
+    const auto lines_seen = [&] { return args->barentswatch ? bw_lines : decoder.stats().lines; };
+    const auto messages_seen = [&] { return args->barentswatch ? bw_fixes : decoder.stats().messages; };
     const auto start = steady_clock::now();
     auto next_stats = start + args->stats_every;
     std::uint64_t messages_at_last = 0;
     auto last_stats = start;
 
     const auto print_stats = [&](steady_clock::time_point now) {
-        const auto& d = decoder.stats();
         const double interval = duration<double>(now - last_stats).count();
-        const double rate = interval > 0 ? static_cast<double>(d.messages - messages_at_last) / interval : 0.0;
+        const auto msgs = messages_seen();
+        const double rate = interval > 0 ? static_cast<double>(msgs - messages_at_last) / interval : 0.0;
         std::cerr << std::fixed << std::setprecision(1) << "[" << duration<double>(now - start).count() << " s] "
-                  << "lines " << d.lines << "  msgs " << d.messages << "  msg/s " << rate << "  vessels "
-                  << mmsis.size() << "  queue-dropped " << queue.dropped();
+                  << "lines " << lines_seen() << "  msgs " << msgs << "  msg/s " << rate << "  vessels "
+                  << mmsis.size() << "  tracks " << tracker.size() << "  gate-rejects " << tracker.stats().rejected
+                  << "  queue-dropped " << queue.dropped();
         if (tcp) {
             const auto t = tcp->stats();
             std::cerr << "  connects " << t.connects << "  connect-failures " << t.connect_failures
@@ -171,7 +214,7 @@ int run(int argc, char** argv) {
         }
         if (recorder) std::cerr << "  recorded " << recorder->stats().lines;
         std::cerr << '\n';
-        messages_at_last = d.messages;
+        messages_at_last = msgs;
         last_stats = now;
     };
 
@@ -189,8 +232,30 @@ int run(int argc, char** argv) {
             continue;
         }
         if (recorder) recorder->write(item->line, item->received_unix);
-        if (auto dm = decoder.feed(item->line)) {
+        if (args->barentswatch) {
+            ++bw_lines;
+            const auto r = track::parse_barentswatch(item->line);
+            if (r.kind == track::BwParse::Invalid) {
+                ++bw_invalid;
+            } else if (r.kind == track::BwParse::NoPosition) {
+                ++bw_no_position;
+            } else {
+                const auto& f = *r.fix;
+                ++bw_fixes;
+                mmsis.insert(f.mmsi);
+                track_fix(f);
+                if (args->json) {
+                    std::cout << std::setprecision(10) << "{\"mmsi\":" << f.mmsi << ",\"t\":" << f.t << ",\"lat\":" << f.lat_deg
+                              << ",\"lon\":" << f.lon_deg << ",\"sog\":";
+                    if (f.sog_knots) std::cout << *f.sog_knots; else std::cout << "null";
+                    std::cout << ",\"cog\":";
+                    if (f.cog_deg) std::cout << *f.cog_deg; else std::cout << "null";
+                    std::cout << "}\n";
+                }
+            }
+        } else if (auto dm = decoder.feed(item->line)) {
             mmsis.insert(ais::mmsi_of(dm->message));
+            if (auto f = track::fix_from(*dm)) track_fix(*f);
             if (args->json) ais::write_json(std::cout, *dm);
         }
     }
@@ -199,7 +264,19 @@ int run(int argc, char** argv) {
 
     print_stats(steady_clock::now());
     std::cerr << "--- final ---\n";
-    ais::write_stats(std::cerr, decoder.stats(), mmsis.size());
+    if (args->barentswatch) {
+        std::cerr << "lines            " << bw_lines << '\n'
+                  << "messages         " << bw_fixes << '\n'
+                  << "unique MMSIs     " << mmsis.size() << '\n'
+                  << "no position      " << bw_no_position << '\n'
+                  << "invalid records  " << bw_invalid << '\n';
+    } else {
+        ais::write_stats(std::cerr, decoder.stats(), mmsis.size());
+    }
+    const auto& ts = tracker.stats();
+    std::cerr << "tracker          " << ts.started << " tracks started, " << ts.updated << " updates, " << ts.rejected
+              << " gate rejections, " << ts.restarted << " restarts, " << ts.duplicates << " duplicates, "
+              << ts.out_of_order << " out of order\n";
     std::cerr << "queue dropped    " << queue.dropped() << '\n';
     if (args->replay_file) {
         std::cerr << "replay lines " << replay_stats.lines << ", timestamped " << replay_stats.timestamped

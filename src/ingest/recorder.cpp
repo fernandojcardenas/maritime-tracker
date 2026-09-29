@@ -8,15 +8,19 @@
 
 namespace maritime::ingest {
 
-Recorder::Recorder(std::filesystem::path dir) : dir_(std::move(dir)) { std::filesystem::create_directories(dir_); }
+Recorder::Recorder(std::filesystem::path dir, RecorderOptions options) : dir_(std::move(dir)), options_(std::move(options)) {
+    std::filesystem::create_directories(dir_);
+}
 
-std::string Recorder::file_name_for(std::int64_t unix_time) {
+std::string Recorder::file_name_for(std::int64_t unix_time, std::string_view extension) {
     const auto t = static_cast<std::time_t>(unix_time);
     std::tm utc{};
     gmtime_r(&t, &utc);
     std::array<char, 32> buf{};
-    const auto n = std::strftime(buf.data(), buf.size(), "ais-%Y%m%d-%H.nmea", &utc);
-    return {buf.data(), n};
+    const auto n = std::strftime(buf.data(), buf.size(), "ais-%Y%m%d-%H", &utc);
+    std::string name(buf.data(), n);
+    name += extension;
+    return name;
 }
 
 std::string Recorder::with_timestamp(std::string_view line, std::int64_t unix_time) {
@@ -38,16 +42,19 @@ std::string Recorder::with_timestamp(std::string_view line, std::int64_t unix_ti
 }
 
 void Recorder::write(std::string_view line, std::int64_t unix_time) {
-    const auto path = dir_ / file_name_for(unix_time);
+    const auto path = dir_ / file_name_for(unix_time, options_.extension);
     if (path != current_ || !out_.is_open()) {
         if (out_.is_open()) out_.close();
         out_.open(path, std::ios::app);
         current_ = path;
         ++stats_.files_opened;
     }
-    const bool add_ts = line.empty() || line.front() != '\\';
-    if (add_ts) ++stats_.timestamps_added;
-    out_ << with_timestamp(line, unix_time) << '\n';
+    if (options_.add_nmea_timestamps) {
+        if (line.empty() || line.front() != '\\') ++stats_.timestamps_added;
+        out_ << with_timestamp(line, unix_time) << '\n';
+    } else {
+        out_ << line << '\n';
+    }
     if (!out_) {
         ++stats_.write_errors;
         out_.clear();
