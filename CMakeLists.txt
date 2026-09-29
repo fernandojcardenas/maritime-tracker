@@ -43,12 +43,18 @@ add_library(maritime
   src/ais/json.cpp
   src/ingest/replay.cpp
   src/ingest/recorder.cpp
-  src/ingest/tcp_source.cpp)
+  src/ingest/tcp_source.cpp
+  src/track/geo.cpp
+  src/track/kalman.cpp
+  src/track/tracker.cpp)
 target_include_directories(maritime PUBLIC include)
 target_link_libraries(maritime PUBLIC Threads::Threads PRIVATE mt_warnings)
 
 add_executable(mt-decode apps/mt-decode/main.cpp)
 target_link_libraries(mt-decode PRIVATE maritime mt_warnings)
+
+add_executable(mt-track apps/mt-track/main.cpp)
+target_link_libraries(mt-track PRIVATE maritime mt_warnings)
 
 add_executable(mt-ingest apps/mt-ingest/main.cpp)
 target_link_libraries(mt-ingest PRIVATE maritime mt_warnings)
@@ -69,7 +75,8 @@ if(MT_BUILD_TESTS)
     tests/decoder_test.cpp
     tests/capture_test.cpp
     tests/ingest_test.cpp
-    tests/tcp_source_test.cpp)
+    tests/tcp_source_test.cpp
+    tests/track_test.cpp)
   target_link_libraries(mt_tests PRIVATE maritime GTest::gtest_main)
   target_compile_definitions(mt_tests PRIVATE MT_TESTDATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/testdata")
   include(GoogleTest)
@@ -77,7 +84,7 @@ if(MT_BUILD_TESTS)
 endif()
 
 if(MT_BUILD_FUZZERS)
-  foreach(target fuzz_decoder fuzz_payload fuzz_framer)
+  foreach(target fuzz_decoder fuzz_payload fuzz_framer fuzz_dk_csv)
     add_executable(${target} fuzz/${target}.cpp)
     target_compile_options(${target} PRIVATE -fsanitize=fuzzer)
     target_link_options(${target} PRIVATE -fsanitize=fuzzer)
