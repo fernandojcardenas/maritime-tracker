@@ -1,8 +1,9 @@
 name: Tracker evaluation
 
 # Downloads real Danish AIS data (about 830 MB, cached after the first run),
-# runs the tracker evaluation from docs/tracker-evaluation.md and fails if the
-# headline results regress.
+# runs the tracker evaluation (docs/tracker-evaluation.md) and the anomaly
+# evaluation (docs/anomaly-evaluation.md), and fails if the headline results
+# regress.
 on:
   workflow_dispatch:
   push:
@@ -13,6 +14,10 @@ on:
       - "apps/mt-track/**"
       - "tools/evaluate_tracker.sh"
       - "tools/fetch_dk_slice.sh"
+      - "src/anomaly/**"
+      - "include/maritime/anomaly/**"
+      - "apps/mt-anomaly/**"
+      - "tools/evaluate_anomalies.sh"
 
 permissions:
   contents: read
@@ -22,22 +27,32 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - name: Cache the data slice
+      - name: Cache the data slices
         id: cache
         uses: actions/cache@v6
         with:
-          path: data/oresund-2026-04-22.csv
-          key: dk-slice-${{ hashFiles('tools/fetch_dk_slice.sh') }}
-      - name: Fetch the data slice
+          path: data/
+          key: dk-slices-${{ hashFiles('tools/fetch_dk_slice.sh') }}
+      - name: Fetch the data slices
         if: steps.cache.outputs.cache-hit != 'true'
-        run: tools/fetch_dk_slice.sh data/oresund-2026-04-22.csv
+        run: tools/fetch_dk_slice.sh data/oresund-2026-04-22.csv data/
       - name: Build
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMT_BUILD_TESTS=OFF
-          cmake --build build --target mt-track
-      - name: Evaluate
-        run: tools/evaluate_tracker.sh build/mt-track data/oresund-2026-04-22.csv | tee evaluation.md >> "$GITHUB_STEP_SUMMARY"
+          cmake --build build --target mt-track mt-anomaly
+      # pipefail: without it a failing check would be hidden by tee.
+      - name: Evaluate the tracker
+        run: |
+          set -o pipefail
+          tools/evaluate_tracker.sh build/mt-track data/oresund-2026-04-22.csv | tee evaluation.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Evaluate the anomaly rules
+        run: |
+          set -o pipefail
+          tools/evaluate_anomalies.sh build/mt-anomaly data/ | tee anomaly-evaluation.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          name: tracker-evaluation
-          path: evaluation.md
+          name: evaluations
+          path: |
+            evaluation.md
+            anomaly-evaluation.md
