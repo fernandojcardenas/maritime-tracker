@@ -5,14 +5,14 @@ All input is public AIS data. No hardware and no paid service is required.
 | Source | What it is | Access | Licence |
 |---|---|---|---|
 | Norwegian Coastal Administration (Kystverket) open AIS feed | Live raw NMEA sentences with IEC 62320-1 tag blocks, streamed over TCP | `153.44.253.27:5631`, no registration | Norwegian Licence for Open Government Data (NLOD) |
-| Danish historical AIS data | Decoded AIS positions and static data as daily zipped CSV files | aisdata.ais.dk, free | Published free of charge by the Danish authorities; see their site for terms |
+| Danish historical AIS data | Decoded AIS positions and static data as daily zipped CSV files | aisdata.ais.dk, free; fetched by `tools/fetch_dk_slice.sh` with a SHA-256 check | Published free of charge by the Danish authorities. Their site states no redistribution terms, so the data is downloaded, not committed |
 
 Notes:
 
 - The Norwegian open feed excludes fishing vessels under 15 m and recreational
   craft under 45 m (Kystverket, checked 2026-09-28).
 - The Danish files are used offline for repeatable evaluation of the tracker
-  and anomaly rules (milestones M3–M4).
+  and anomaly rules (milestones M3–M4). The M3 evaluation uses 2026-04-22.
 - Everything in this repository comes from these public sources. No data from
   any government or military system is used.
 

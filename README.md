@@ -9,7 +9,7 @@ clean tracks, flags suspicious behaviour and scores collision risk.
 It runs entirely on public data: no radio hardware is needed. A Raspberry Pi
 with an RTL-SDR receiver can be added later as one more input.
 
-**Status:** milestone 1 (decoder) done; milestone 2 (live ingest and replay) built and tested, with the one-hour run against the live feed still to do. See the [roadmap](docs/roadmap.md).
+**Status:** milestones 1 (decoder) and 3 (tracker) done; milestone 2 (live ingest and replay) built and tested, with the one-hour run against the live feed still to do. See the [roadmap](docs/roadmap.md).
 
 ## Why
 
@@ -78,17 +78,45 @@ all 9,102 lines arrived across 3 connections, 0 were dropped, and replaying the
 recording produced exactly the same decoded messages as decoding the source
 file directly. Full output: [docs/evidence/m2-fake-feed-run.txt](docs/evidence/m2-fake-feed-run.txt).
 
+## Tracker (M3)
+
+Each vessel gets a constant-velocity Kalman filter that fuses reported
+position with reported speed and course, and gates out reports that are
+statistically implausible for the track ([ADR 0003](docs/adr/0003-tracker-design.md)).
+
+It was evaluated on 144,414 real reports from 411 vessels in the Øresund
+strait (Danish AIS data, 2026-04-22), tuned on one hour and tested on the
+next. Median / 90th percentile error predicting a moving vessel's next
+position 10–30 s ahead:
+
+| Input | Hold last position | Dead reckoning | Kalman filter |
+|---|---:|---:|---:|
+| Clean | 53 / 83 m | **2 / 12 m** | 3 / 12 m |
+| 15 m noise, 30% without speed/course | 54 / 93 m | 24 / 67 m | **6 / 22 m** |
+
+On clean AIS, dead reckoning from the last report is already excellent and
+the filter doesn't beat it. With degraded input the filter is about four
+times more accurate. The gate also rejects about 89% of injected wild
+reports. Full method, all horizons, the trade-offs and one known weakness
+(long silences) are in the [tracker evaluation](docs/tracker-evaluation.md).
+
+```
+tools/fetch_dk_slice.sh data/oresund.csv          # 830 MB download, SHA-256 checked
+./build/mt-track --dk-csv data/oresund.csv --eval-from 1776862800 --eval-to 1776866400 --pos-sigma 5
+```
+
 ## How it's tested
 
 | Check | What it proves | Where |
 |---|---|---|
-| 58 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation | `tests/` |
+| 75 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring | `tests/` |
+| Tracker evaluation on real data | Held-out prediction error against two baselines, and outlier rejection; fails CI on regression | `tools/evaluate_tracker.sh`, `evaluate` workflow |
 | Fake-feed TCP tests | Split lines, peer disconnect, silent connection, refused connect, prompt shutdown, against a real socket on loopback | `tests/tcp_source_test.cpp` |
 | Recorded-traffic test | Exact counts on 85,194 lines of real AIS, including its malformed sentences | `tests/capture_test.cpp` |
 | Cross-check against pyais | Every decoded field of 76,130 messages matches an independent open-source decoder | `tools/crosscheck.py` |
 | ASan + UBSan | No memory errors or undefined behaviour, with GCC and Clang | CI `test` job |
 | ThreadSanitizer | No data races in the reader thread, queue and TCP client; threaded tests repeated 20 times | CI `tsan` job |
-| Three libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, and the line framer under arbitrary TCP chunking | `fuzz/`, CI `fuzz` job |
+| Four libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, the line framer under arbitrary TCP chunking, and the CSV parser for downloaded data | `fuzz/`, CI `fuzz` job |
 | clang-tidy | bugprone, cert, performance, modernize and readability checks, warnings as errors | `.clang-tidy`, CI `lint` job |
 
 The cross-check found four real problems during development, all fixed:
@@ -116,12 +144,13 @@ with libFuzzer), `-DMT_WARNINGS_AS_ERRORS=ON`.
 
 ```
 include/maritime/   public headers: nmea/, ais/, util/
-src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder)
+src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder), tracker
 apps/mt-decode/     command-line decoder
 apps/mt-ingest/     live/replay ingest with recording
+apps/mt-track/      tracker evaluation on recorded traffic
 tests/              unit tests and the recorded-traffic test
 fuzz/               libFuzzer targets
-tools/              cross-check against pyais, fake TCP feed
+tools/              cross-check against pyais, fake TCP feed, data fetch and tracker evaluation
 testdata/           recorded AIS traffic (MIT, from pyais)
 docs/               roadmap, data sources, architecture decisions, evidence from real runs
 ```
