@@ -9,7 +9,7 @@ sentences.
 | Milestone | What it adds | Status |
 |---|---|---|
 | M1 Decoder | NMEA/AIVDM parser, tag blocks, multi-fragment reassembly, message types 1–3, 5, 18, 19, 24; unit tests, a recorded-traffic test, a cross-check against an independent decoder, two fuzz targets | Done |
-| M2 Ingest | Live TCP client for the Norwegian open feed with reconnect and backpressure; replay of recorded files at real or accelerated speed; hourly recording | Built and tested locally; one-hour live run pending (the feed was unreachable from the development network on 2026-09-28) |
+| M2 Ingest | Live TCP client for the Norwegian open feed with reconnect and backpressure; replay of recorded files at real or accelerated speed; hourly recording | Built and tested locally, plus the BarentsWatch HTTPS source; one-hour live run pending (needs BarentsWatch API credentials; the raw TCP feed refused US networks) |
 | M3 Tracker | Per-vessel Kalman filter (constant-velocity model) fusing position with speed and course, NIS gating, restarts, expiry; evaluated on held-out real traffic against two baselines | Done ([evaluation](tracker-evaluation.md)); long silences move to M4 |
 | M4 Anomalies | Position jumps, impossible speed, reporting gaps, identity conflicts (one MMSI in two places); scored against labelled cases from Danish historical data | Planned |
 | M5 Collision risk | Closest point of approach (CPA/TCPA) for nearby pairs; encounter classification under COLREGs rules 13–15 (overtaking, head-on, crossing) | Planned |

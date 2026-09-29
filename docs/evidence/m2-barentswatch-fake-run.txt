@@ -1,0 +1,31 @@
+# Real run, 2026-09-29, Linux development container, Release build.
+# Fake BarentsWatch server (tools/fake_barentswatch.py) serving real vessel positions from the
+# Danish AIS slice (tools/fetch_dk_slice.sh), ending each stream after 3,000 records the way a
+# token expiry ends the real one.
+# Command: tools/barentswatch_stream.sh 2> stream.log \
+#            | ./build/mt-ingest --stdin --format barentswatch --duration 12 --record rec --stats-every 3
+# stream.log:
+#   barentswatch_stream: token ok, connecting to http://127.0.0.1:8765/v1/combined
+#   barentswatch_stream: stream ended (curl exit 0) after 2 s
+#   barentswatch_stream: reconnecting in 2 s
+#   barentswatch_stream: token ok, connecting to http://127.0.0.1:8765/v1/combined
+#   barentswatch_stream: stream ended (curl exit 0) after 2 s
+#   barentswatch_stream: reconnecting in 4 s
+#   barentswatch_stream: token ok, connecting to http://127.0.0.1:8765/v1/combined
+#   curl: (23) Failure writing output to destination
+#   barentswatch_stream: reader closed the pipe, stopping
+# mt-ingest stderr:
+[3.1 s] lines 3000  msgs 3000  msg/s 969.9  vessels 309  tracks 309  gate-rejects 2  queue-dropped 0  recorded 3000
+[6.1 s] lines 5804  msgs 5804  msg/s 934.6  vessels 360  tracks 360  gate-rejects 3  queue-dropped 0  recorded 5804
+[9.2 s] lines 6000  msgs 6000  msg/s 62.4  vessels 362  tracks 362  gate-rejects 3  queue-dropped 0  recorded 6000
+[12.0 s] lines 8366  msgs 8366  msg/s 854.8  vessels 373  tracks 373  gate-rejects 7  queue-dropped 0  recorded 8366
+--- final ---
+lines            8366
+messages         8366
+unique MMSIs     373
+no position      0
+invalid records  0
+tracker          373 tracks started, 4350 updates, 7 gate rejections, 0 restarts, 3636 duplicates, 0 out of order
+queue dropped    0
+recorded 8366 lines into 1 file(s), write errors 0
+# Replaying the recording twice: sha256 of decoded output 9fdc22f3f54d80cf and 9fdc22f3f54d80cf

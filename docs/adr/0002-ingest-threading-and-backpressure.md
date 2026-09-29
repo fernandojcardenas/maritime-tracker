@@ -36,3 +36,14 @@ faster.
   silently and never by blocking the network.
 - POSIX sockets only (Linux and macOS); no Windows support.
 - ThreadSanitizer runs in CI to keep the two-thread design race-free.
+
+## Addendum, 2026-09-29: a second live source over HTTPS
+
+The raw NMEA feed refused connections from two US networks, so live runs now
+default to the BarentsWatch Live AIS API (same Norwegian data, HTTPS, one JSON
+record per line). The HTTPS part is delegated to `curl` in
+`tools/barentswatch_stream.sh`, which handles the OAuth token and reconnects;
+`mt-ingest --stdin` reads the pipe through the same bounded line framer and
+queue. This keeps TLS and credential handling out of the C++ service, at the
+cost of one extra process. The JSON parser is nlohmann/json (pinned by
+SHA-256), fuzzed like the other input parsers.
