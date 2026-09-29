@@ -1,9 +1,10 @@
 // mt-ingest: read AIS from a live TCP feed, stdin or a recorded file, decode
-// it, track vessels, and optionally record the raw lines for later replay.
+// it, track vessels, flag anomalies, and optionally record the raw lines for
+// later replay.
 //
 //   mt-ingest --tcp 153.44.253.27:5631 --record recordings/
 //   mt-ingest --replay recordings/ais-20260928-17.nmea --speed 60 --json > messages.jsonl
-//   tools/barentswatch_stream.sh | mt-ingest --stdin --format barentswatch --duration 3600
+//   tools/barentswatch_stream.sh | mt-ingest --stdin --format barentswatch --duration 3600 --anomalies a.jsonl
 //
 // Formats: "nmea" (raw !AIVDM sentences, the default) or "barentswatch"
 // (one JSON record per line from the BarentsWatch Live AIS API).
@@ -25,9 +26,11 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 #include "maritime/ais/decoder.hpp"
 #include "maritime/ais/json.hpp"
+#include "maritime/anomaly/detector.hpp"
 #include "maritime/ingest/bounded_queue.hpp"
 #include "maritime/ingest/fd_source.hpp"
 #include "maritime/ingest/recorder.hpp"
@@ -61,14 +64,19 @@ struct Args {
     seconds stats_every{10};
     std::optional<seconds> duration;
     std::size_t queue_capacity = 65536;
+    std::optional<std::string> anomalies_file;  // one JSON object per anomaly
+    std::optional<double> listening_since;      // replay: silences that began earlier are not judged
 };
 
 void usage() {
     std::cerr << "usage: mt-ingest (--tcp HOST:PORT | --stdin | --replay FILE [--speed N])\n"
                  "                 [--format nmea|barentswatch] [--record DIR] [--json]\n"
                  "                 [--stats-every SECONDS] [--duration SECONDS] [--queue N]\n"
+                 "                 [--anomalies FILE] [--listening-since UNIX_TIME]\n"
                  "  --speed 0 replays as fast as possible; 1 is real time (default). NMEA replay is\n"
-                 "  paced by tag-block time; barentswatch replay is not paced.\n";
+                 "  paced by tag-block time; barentswatch replay is not paced.\n"
+                 "  Live sources judge only silences that began after mt-ingest started;\n"
+                 "  --listening-since sets that time for a replay.\n";
 }
 
 std::optional<Args> parse_args(int argc, char** argv) {
@@ -101,6 +109,10 @@ std::optional<Args> parse_args(int argc, char** argv) {
             a.stats_every = seconds(std::stol(*v));
         } else if (arg == "--duration") {
             a.duration = seconds(std::stol(*v));
+        } else if (arg == "--anomalies") {
+            a.anomalies_file = *v;
+        } else if (arg == "--listening-since") {
+            a.listening_since = std::stod(*v);
         } else if (arg == "--queue") {
             a.queue_capacity = std::stoul(*v);
         } else if (arg == "--format") {
@@ -180,6 +192,33 @@ int run(int argc, char** argv) {
     std::ios::sync_with_stdio(false);
     ais::Decoder decoder;
     track::Tracker tracker;
+    anomaly::Params anomaly_params;
+    // A live stream may open with old positions; only silences that begin
+    // after we started listening say anything about the vessel.
+    if (!args->replay_file) anomaly_params.listening_since = static_cast<double>(unix_now());
+    if (args->listening_since) anomaly_params.listening_since = *args->listening_since;
+    anomaly::Detector detector(anomaly_params);
+    std::vector<anomaly::Anomaly> anomalies;
+    std::uint64_t anomalies_total = 0;
+    std::ofstream anomalies_out;
+    if (args->anomalies_file) {
+        anomalies_out.open(*args->anomalies_file);
+        if (!anomalies_out) {
+            std::cerr << "mt-ingest: cannot write " << *args->anomalies_file << '\n';
+            return 1;
+        }
+    }
+    const auto emit_anomalies = [&] {
+        for (const auto& a : anomalies) {
+            ++anomalies_total;
+            if (anomalies_out.is_open()) {
+                anomalies_out << std::setprecision(10) << R"({"kind":")" << anomaly::name(a.kind) << R"(","mmsi":)" << a.mmsi
+                              << R"(,"t":)" << a.t << R"(,"lat":)" << a.lat_deg << R"(,"lon":)" << a.lon_deg
+                              << R"(,"value":)" << a.value << R"(,"distance_m":)" << a.distance_m << "}\n";
+            }
+        }
+        anomalies.clear();
+    };
     std::set<std::uint32_t> mmsis;
     // Counters for the barentswatch format (the NMEA decoder keeps its own).
     std::uint64_t bw_lines = 0;
@@ -190,9 +229,12 @@ int run(int argc, char** argv) {
     const auto track_fix = [&](const track::Fix& f) {
         if (f.t >= next_expire) {
             tracker.expire(f.t);
+            detector.expire(f.t, 3.0 * 3600.0);
             next_expire = f.t + 60.0;
         }
         (void)tracker.add(f);
+        detector.add(f, anomalies);
+        emit_anomalies();
     };
     const auto lines_seen = [&] { return args->barentswatch ? bw_lines : decoder.stats().lines; };
     const auto messages_seen = [&] { return args->barentswatch ? bw_fixes : decoder.stats().messages; };
@@ -208,7 +250,7 @@ int run(int argc, char** argv) {
         std::cerr << std::fixed << std::setprecision(1) << "[" << duration<double>(now - start).count() << " s] "
                   << "lines " << lines_seen() << "  msgs " << msgs << "  msg/s " << rate << "  vessels "
                   << mmsis.size() << "  tracks " << tracker.size() << "  gate-rejects " << tracker.stats().rejected
-                  << "  queue-dropped " << queue.dropped();
+                  << "  anomalies " << anomalies_total << "  queue-dropped " << queue.dropped();
         if (tcp) {
             const auto t = tcp->stats();
             std::cerr << "  connects " << t.connects << "  connect-failures " << t.connect_failures
@@ -263,6 +305,8 @@ int run(int argc, char** argv) {
     }
     reader.join();
     if (recorder) recorder->flush();
+    detector.flush(anomalies);
+    emit_anomalies();
 
     print_stats(steady_clock::now());
     std::cerr << "--- final ---\n";
@@ -279,6 +323,12 @@ int run(int argc, char** argv) {
     std::cerr << "tracker          " << ts.started << " tracks started, " << ts.updated << " updates, " << ts.rejected
               << " gate rejections, " << ts.restarted << " restarts, " << ts.duplicates << " duplicates, "
               << ts.out_of_order << " out of order\n";
+    const auto& as = detector.stats();
+    std::cerr << "anomalies        " << as.impossible_speed << " impossible speed, " << as.position_jump
+              << " position jumps, " << as.gap << " gaps, " << as.identity_conflict << " identity conflicts\n"
+              << "not flagged      " << as.gaps_before_listening << " silences begun before listening, "
+              << as.gaps_coverage_returned << " coverage returned, " << as.gaps_during_outage << " network outage, "
+              << as.gaps_not_regular << " not heard regularly; " << as.aircraft << " SAR aircraft reports\n";
     std::cerr << "queue dropped    " << queue.dropped() << '\n';
     if (args->replay_file) {
         std::cerr << "replay lines " << replay_stats.lines << ", timestamped " << replay_stats.timestamped
