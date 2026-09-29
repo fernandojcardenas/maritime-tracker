@@ -1,0 +1,69 @@
+M7 live map: measured runs, 2026-09-29
+======================================
+
+1. WebSocket traffic on the recorded one-hour live session
+----------------------------------------------------------
+Input: the one-hour BarentsWatch Live AIS recording of 2026-09-29
+(127,893 records, 13:39-14:39 UTC), replayed by msgtime:
+
+  mt-ingest --replay norway-live-2026-09-29.jsonl --format barentswatch \
+            --speed N --serve 18090 --listening-since 1790689162
+
+A standard-library Python client connected once and recorded every message
+for 30 seconds of wall clock. Sizes are WebSocket payload bytes (JSON).
+
+== replay speed 1, client connected after 60 s, listening 30 s
+snapshot: 127,621 bytes, 2,489 tracks, data time 13:40:21 UTC
+updates: 30 in 30 s; bytes min/median/max 8,645 / 11,412 / 19,620
+changed tracks per update: median 55; tracks at end 2,725; data time at end 13:40:54 UTC
+== replay speed 60, client connected after 20 s, listening 30 s
+snapshot: 177,252 bytes, 3,570 tracks, data time 13:58:28 UTC
+updates: 31 in 30 s; bytes min/median/max 105,354 / 113,546 / 118,774
+changed tracks per update: median 2,201; tracks at end 3,643; data time at end 14:29:38 UTC
+
+At real time (speed 1) a browser receives one update a second of about
+11 KB; a newly connected browser first gets the whole picture (128 KB for
+2,489 vessels). At 60x, each one-second update carries a minute of data, so
+most vessels have moved and updates approach snapshot size.
+
+2. Docker image, built and checked from outside
+-----------------------------------------------
+  docker build -t maritime-tracker .
+  docker run -d --name mt -p 18080:8080 maritime-tracker
+  tools/check_live_map.py http://127.0.0.1:18080/ --min-tracks 50 --updates 3
+
+The container replays the bundled 5,000-record sample in real time. This
+build ran on a network behind a TLS-inspecting proxy, so it used
+--build-arg BASE=<ubuntu:24.04 plus that proxy's CA certificate>; the CI
+docker job builds with the default base.
+
+check_live_map: page and files OK (http://127.0.0.1:18080/)
+check_live_map: snapshot OK: 0 tracks, 0 messages, 0 encounters
+check_live_map: update 1 OK: 38 changed tracks, 38 tracks, 38 messages
+check_live_map: update 2 OK: 43 changed tracks, 81 tracks, 81 messages
+check_live_map: update 3 OK: 65 changed tracks, 146 tracks, 146 messages
+exit 0
+user id in container: 999
+exit code after docker stop: 0
+image size: 48M
+(image size as reported by docker image inspect: compressed content; about
+200 MB unpacked on disk)
+
+Container log (stderr), from start to docker stop:
+
+entrypoint: replaying the bundled sample (set BW_CLIENT_ID and BW_CLIENT_SECRET for live data)
+live map: http://localhost:8080/
+[4.0 s] lines 147  msgs 147  msg/s 36.7  vessels 147  tracks 147  gate-rejects 0  anomalies 0  encounters 0  queue-dropped 0  map-viewers 0
+--- final ---
+lines            147
+messages         147
+unique MMSIs     147
+no position      0
+invalid records  0
+tracker          147 tracks started, 0 updates, 0 gate rejections, 0 restarts, 0 duplicates, 0 out of order
+anomalies        0 impossible speed, 0 position jumps, 0 gaps, 0 identity conflicts
+not flagged      0 silences begun before listening, 0 coverage returned, 0 network outage, 0 not heard regularly; 0 SAR aircraft reports
+encounters       0 (pairs first at risk: CPA within 0.5 nm within 20 min, both under way)
+queue dropped    0
+replay lines 147, timestamped 147, gaps shortened 0, backwards timestamps 101
+live map         8 connections, 1 map viewers, 0 dropped as too slow, 0 protocol errors, 1895608 bytes sent

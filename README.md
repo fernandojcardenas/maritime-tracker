@@ -9,7 +9,7 @@ clean tracks, flags suspicious behaviour and scores collision risk.
 It runs entirely on public data: no radio hardware is needed. A Raspberry Pi
 with an RTL-SDR receiver can be added later as one more input.
 
-**Status:** milestones 1 (decoder), 2 (live ingest and replay), 3 (tracker), 4 (anomalies), 5 (collision risk) and 6 (spatial index) done. See the [roadmap](docs/roadmap.md).
+**Status:** milestones 1 (decoder), 2 (live ingest and replay), 3 (tracker), 4 (anomalies), 5 (collision risk), 6 (spatial index) and 7 (live map, WebSocket API and Docker image) done. See the [roadmap](docs/roadmap.md).
 
 ## Why
 
@@ -90,8 +90,9 @@ line limits as the TCP client, so no TLS library is needed in the service.
   stalling the socket. File replay waits for space instead, so it never loses
   a line. See [ADR 0002](docs/adr/0002-ingest-threading-and-backpressure.md).
 - **Recording and replay.** Recordings rotate hourly and every line gets a
-  receive timestamp. Replay paces lines by those timestamps at any speed,
-  shortens long outages, and never rewinds on out-of-order timestamps. Time is
+  receive timestamp. Replay paces lines by those timestamps (JSON records by
+  their own `msgtime`) at any speed, shortens long outages, and never rewinds
+  on out-of-order timestamps. Time is
   injected, so the pacing tests run instantly.
 
 The same checks run against [`tools/fake_barentswatch.py`](tools/fake_barentswatch.py),
@@ -259,21 +260,56 @@ build/mt-bench --dk-csv data/oresund-2026-04-22.csv --barentswatch live.jsonl
 build/mt-bench --barentswatch live.jsonl --profile grid 1000000   # time per phase
 ```
 
+## Live map (M7)
+
+![Live map replaying the recorded Norwegian hour](docs/images/live-map.gif)
+
+`mt-ingest --serve 8080` serves a live map at http://localhost:8080/: every
+tracked vessel with a five-minute course line, the pairs at risk of
+collision with who gives way, and anomaly flags, updated once a second. The
+recording above is real: `mt-ingest` replaying the one-hour BarentsWatch
+recording at 10x off Bergen, in Chromium.
+
+```
+docker build -t maritime-tracker .
+docker run --rm -p 8080:8080 maritime-tracker                                   # replays the bundled sample
+docker run --rm -p 8080:8080 -e BW_CLIENT_ID -e BW_CLIENT_SECRET maritime-tracker  # live Norwegian AIS
+```
+
+- **Own HTTP/1.1 and WebSocket server** (RFC 6455, with its own SHA-1 and
+  base64), one `poll()` thread, a bounded queue per client: a browser that
+  falls behind is disconnected, never the tracker slowed. Tested against the
+  published vectors, on real sockets, under ThreadSanitizer and by a fuzz
+  target ([ADR 0007](docs/adr/0007-live-map.md)).
+- **Snapshot, then deltas:** a new browser gets everything once, then only
+  what changed: about 11 KB a second at real time on the Norwegian feed
+  ([evidence](docs/evidence/m7-live-map-run-2026-09-29.txt)).
+- **One binary, no internet needed:** page, Leaflet and a Natural Earth
+  coastline are built into `mt-ingest`. No tile server, no API key.
+- **Safe defaults:** bound to 127.0.0.1, limits on clients, request size and
+  time, a Content-Security-Policy allowing only the server itself; the
+  container runs as non-root.
+
+[docs/live-map.md](docs/live-map.md) has the protocol, the limits, phone
+layout and how it's tested.
+
 ## How it's tested
 
 | Check | What it proves | Where |
 |---|---|---|
-| 120 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring; JSON records and ISO 8601 times; every anomaly rule and its exceptions (outages, coverage returning, aircraft, repeated transmissions); CPA/TCPA, the COLREGs sectors on both sides of each boundary, and role symmetry over 20,000 random pairs; the four pair-search methods against brute force and an independent great-circle check, at the date line and the poles | `tests/` |
+| 137 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring; JSON records and ISO 8601 times; every anomaly rule and its exceptions (outages, coverage returning, aircraft, repeated transmissions); CPA/TCPA, the COLREGs sectors on both sides of each boundary, and role symmetry over 20,000 random pairs; the four pair-search methods against brute force and an independent great-circle check, at the date line and the poles; SHA-1, base64 and the WebSocket handshake against published vectors, HTTP requests, every frame encoding and bad-frame close code, and the live-map messages | `tests/` |
 | Tracker evaluation on real data | Held-out prediction error against two baselines, and outlier rejection; fails CI on regression | `tools/evaluate_tracker.sh`, `evaluate` workflow |
 | Anomaly evaluation on real data | Planted anomalies found and false alarms on four slices of Danish traffic; fails CI on regression | `tools/evaluate_anomalies.sh`, `evaluate` workflow |
 | Pair-search benchmark | All four methods return identical pairs on real traffic and up to 100,000 vessels; timings in the job summary | `apps/mt-bench`, CI `benchmark` job |
 | Collision-risk evaluation on real data | Predicted CPA against the real pass, and COLREGs roles against what vessels did; fails CI on regression | `tools/evaluate_collision_risk.sh`, `evaluate` workflow |
 | Fake-feed TCP tests | Split lines, peer disconnect, silent connection, refused connect, prompt shutdown, against a real socket on loopback | `tests/tcp_source_test.cpp` |
+| Map server socket tests | Files and 404, upgrade then snapshot then updates, bad frames, a client that stops reading dropped while another keeps receiving, client limit, request timeout, stopping with clients connected | `tests/serve_test.cpp` |
+| Docker image | Built, run, and checked from outside: page, files, security header, handshake, snapshot and updates; non-root; clean exit on `docker stop` | `Dockerfile`, `tools/check_live_map.py`, CI `docker` job |
 | Recorded-traffic test | Exact counts on 85,194 lines of real AIS, including its malformed sentences | `tests/capture_test.cpp` |
 | Cross-check against pyais | Every decoded field of 76,130 messages matches an independent open-source decoder | `tools/crosscheck.py` |
 | ASan + UBSan | No memory errors or undefined behaviour, with GCC and Clang | CI `test` job |
-| ThreadSanitizer | No data races in the reader thread, queue and TCP client; threaded tests repeated 20 times | CI `tsan` job |
-| Eight libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, the line framer under arbitrary TCP chunking, and the parsers for downloaded CSV and streamed JSON; arbitrary report sequences into the anomaly detector; arbitrary positions and velocities into collision risk; every pair-search method against brute force | `fuzz/`, CI `fuzz` job |
+| ThreadSanitizer | No data races in the reader thread, queue and TCP client; threaded tests (including the map server's) repeated 20 times | CI `tsan` job |
+| Nine libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, the line framer under arbitrary TCP chunking, and the parsers for downloaded CSV and streamed JSON; arbitrary report sequences into the anomaly detector; arbitrary positions and velocities into collision risk; every pair-search method against brute force; arbitrary bytes into the HTTP request parser and, in arbitrary chunks, the WebSocket frame parser | `fuzz/`, CI `fuzz` job |
 | Live-API bridge test | Token, stream, token expiry, reconnect and clean shutdown against a fake server; the secret must not appear in any output; a 200,000-line replay must lose nothing | CI `barentswatch-bridge` job |
 | Live-data test | 5,000 real records from the one-hour live run parse, track and pass the anomaly rules with pinned counts | `tests/barentswatch_test.cpp`, `tests/anomaly_test.cpp` |
 | clang-tidy | bugprone, cert, performance, modernize and readability checks, warnings as errors | `.clang-tidy`, CI `lint` job |
@@ -297,22 +333,26 @@ ctest --test-dir build
 ```
 
 Options: `-DMT_SANITIZE=ON` (ASan + UBSan), `-DMT_BUILD_FUZZERS=ON` (Clang
-with libFuzzer), `-DMT_WARNINGS_AS_ERRORS=ON`.
+with libFuzzer), `-DMT_WARNINGS_AS_ERRORS=ON`. Or `docker build -t
+maritime-tracker .` for the image with the live map.
 
 ## Layout
 
 ```
-include/maritime/   public headers: nmea/, ais/, ingest/, track/, anomaly/, risk/, spatial/, util/
-src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder), tracker, anomaly detector, collision risk, pair search
+include/maritime/   public headers: nmea/, ais/, ingest/, track/, anomaly/, risk/, spatial/, serve/, util/
+src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder), tracker, anomaly detector, collision risk, pair search, map server (HTTP, WebSocket, live feed)
 apps/mt-decode/     command-line decoder
-apps/mt-ingest/     live/replay ingest with recording
+apps/mt-ingest/     live/replay ingest with recording and the live map
 apps/mt-track/      tracker evaluation on recorded traffic
 apps/mt-anomaly/    anomaly detection and evaluation on recorded traffic
 apps/mt-risk/       collision-risk evaluation on recorded traffic
 apps/mt-bench/      pair-search benchmark
+web/                live map page, script, style, coastline and vendored Leaflet (built into mt-ingest)
+cmake/              build helper that embeds web/ in the binary
+docker/             container entrypoint (Dockerfile at the root)
 tests/              unit tests and the recorded-traffic test
 fuzz/               libFuzzer targets
-tools/              cross-check against pyais, fake TCP feed and fake live API, live stream script, data fetch, tracker, anomaly and collision-risk evaluations
+tools/              cross-check against pyais, fake TCP feed and fake live API, live stream script, data fetch, tracker, anomaly and collision-risk evaluations, coastline builder, live-map check
 testdata/           recorded AIS traffic (MIT, from pyais) and 5,000 live records (NLOD)
 docs/               roadmap, data sources, architecture decisions, evidence from real runs
 ```
@@ -325,5 +365,5 @@ systems or data. Design decisions are recorded in [docs/adr](docs/adr).
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE). The test data is MIT licensed by its authors; see
-[testdata/LICENSE.pyais](testdata/LICENSE.pyais).
+MIT. See [LICENSE](LICENSE). Third-party material (Leaflet, Natural Earth,
+test data) keeps its own licence; see [THIRD-PARTY.md](THIRD-PARTY.md).
