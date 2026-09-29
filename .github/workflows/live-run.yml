@@ -91,10 +91,14 @@ jobs:
           echo "lines $lines, messages $msgs"
           test "${lines:-0}" -gt 0 && test "${msgs:-0}" -gt 0
           cat recordings/*."$ext" > "all.$ext"
-          a=$(./build/mt-ingest --replay "all.$ext" --format "$format" --speed 0 --json 2>/dev/null | sha256sum)
-          b=$(./build/mt-ingest --replay "all.$ext" --format "$format" --speed 0 --json 2>/dev/null | sha256sum)
+          a=$(./build/mt-ingest --replay "all.$ext" --format "$format" --speed 0 --json 2>replay1.log | sha256sum)
+          b=$(./build/mt-ingest --replay "all.$ext" --format "$format" --speed 0 --json 2>replay2.log | sha256sum)
           echo "replay 1: $a"; echo "replay 2: $b"
+          grep -E '^(lines|messages|queue dropped)' replay1.log
           test "$a" = "$b"
+          # Replay must process every recorded line: nothing dropped, same count as recorded.
+          test "$(awk '/^queue dropped/ {print $3}' replay1.log)" -eq 0
+          test "$(awk '/^lines/ {print $2}' replay1.log | tail -1)" -eq "$(wc -l < "all.$ext")"
           {
             echo "## Live run: $SOURCE for ${DURATION} s"
             echo

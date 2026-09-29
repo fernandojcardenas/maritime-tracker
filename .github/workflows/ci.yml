@@ -139,6 +139,24 @@ jobs:
           a=$(./build/mt-ingest --replay rec/*.jsonl --format barentswatch --speed 0 --json 2>/dev/null | sha256sum)
           b=$(./build/mt-ingest --replay rec/*.jsonl --format barentswatch --speed 0 --json 2>/dev/null | sha256sum)
           test "$a" = "$b"
+      - name: Replay a file far larger than the queue without losing lines
+        run: |
+          # 200,000 records: three times the 65,536-line queue, so a replay that
+          # dropped lines under pressure (a bug found in the first one-hour live
+          # run) would lose data and give different output each time.
+          python3 - > big.jsonl <<'PY'
+          import json
+          for k in range(200000):
+              print(json.dumps({"mmsi": 219000000 + k % 500, "latitude": 55.6 + (k % 500) * 0.001,
+                                "longitude": 12.0 + k * 1e-6, "speedOverGround": 10.0, "courseOverGround": 90.0,
+                                "msgtime": f"2026-04-22T12:{(k // 6000) % 60:02d}:{(k // 100) % 60:02d}Z"}))
+          PY
+          a=$(./build/mt-ingest --replay big.jsonl --format barentswatch --speed 0 --json 2>r1.log | sha256sum)
+          b=$(./build/mt-ingest --replay big.jsonl --format barentswatch --speed 0 --json 2>r2.log | sha256sum)
+          cat r1.log
+          test "$a" = "$b"
+          test "$(awk '/^queue dropped/ {print $3}' r1.log)" -eq 0
+          test "$(awk '/^lines/ {print $2}' r1.log | tail -1)" -eq 200000
 
   lint:
     name: clang-tidy

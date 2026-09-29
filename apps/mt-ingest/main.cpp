@@ -159,9 +159,11 @@ int run(int argc, char** argv) {
                 std::cerr << "mt-ingest: cannot open " << *args->replay_file << '\n';
             } else {
                 ingest::SteadyClock clock;
-                replay_stats = ingest::replay(in, {.speed = args->speed}, clock,
-                                              [&](std::string_view l) { queue.push(Item{std::string(l), unix_now()}); },
-                                              g_stop);
+                // A file must be processed completely: wait for queue space
+                // rather than dropping lines the way the live sources do.
+                replay_stats = ingest::replay(
+                    in, {.speed = args->speed}, clock,
+                    [&](std::string_view l) { queue.push_wait(Item{std::string(l), unix_now()}); }, g_stop);
             }
             reader_done = true;
             queue.close();

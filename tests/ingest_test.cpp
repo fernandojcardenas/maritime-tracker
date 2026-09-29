@@ -75,6 +75,37 @@ TEST(BoundedQueue, CloseWakesConsumerAndRejectsPush) {
     EXPECT_TRUE(q.closed_and_empty());
 }
 
+TEST(BoundedQueue, PushWaitNeverDropsAndPreservesOrder) {
+    BoundedQueue<int> q(8);  // far smaller than the input, so the producer must wait
+    constexpr int kItems = 50000;
+    std::vector<int> got;
+    got.reserve(kItems);
+    std::thread consumer([&] {
+        while (true) {
+            if (auto v = q.pop(50ms)) {
+                got.push_back(*v);
+            } else if (q.closed_and_empty()) {
+                break;
+            }
+        }
+    });
+    for (int i = 0; i < kItems; ++i) ASSERT_TRUE(q.push_wait(i));
+    q.close();
+    consumer.join();
+    EXPECT_EQ(q.dropped(), 0U);
+    ASSERT_EQ(got.size(), static_cast<std::size_t>(kItems));
+    for (int i = 0; i < kItems; ++i) ASSERT_EQ(got[static_cast<std::size_t>(i)], i);
+}
+
+TEST(BoundedQueue, PushWaitUnblocksOnClose) {
+    BoundedQueue<int> q(1);
+    q.push(1);
+    std::thread producer([&] { EXPECT_FALSE(q.push_wait(2)); });  // full, so it waits
+    std::this_thread::sleep_for(20ms);
+    q.close();
+    producer.join();
+}
+
 TEST(BoundedQueue, ProducerConsumerAccountsForEveryItem) {
     BoundedQueue<int> q(64);
     constexpr int kItems = 20000;

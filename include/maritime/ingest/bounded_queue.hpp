@@ -1,7 +1,9 @@
-// Fixed-capacity multi-producer/multi-consumer queue. When full, push()
-// drops the oldest item and counts it: for a live feed, fresh data matters
-// more than old data, and the reader thread must never block on a slow
-// consumer (the TCP peer would stall or disconnect us).
+// Fixed-capacity multi-producer/multi-consumer queue with two overflow
+// policies. push() drops the oldest item when full and counts it: for a live
+// feed, fresh data matters more than old data, and the reader thread must
+// never block on a slow consumer (the TCP peer would stall or disconnect us).
+// push_wait() blocks until there is room instead: for a recorded file, where
+// every line must be processed and the reader can simply slow down.
 #pragma once
 
 #include <chrono>
@@ -35,6 +37,19 @@ public:
         return true;
     }
 
+    // Waits for room instead of dropping. Returns false if the queue is closed.
+    bool push_wait(T item) {
+        {
+            std::unique_lock lock(mu_);
+            space_cv_.wait(lock, [&] { return closed_ || items_.size() < capacity_; });
+            if (closed_) return false;
+            items_.push_back(std::move(item));
+            ++pushed_;
+        }
+        cv_.notify_one();
+        return true;
+    }
+
     // Blocks until an item is available, the queue is closed and empty, or
     // the timeout expires. Returns nullopt in the last two cases.
     template <class Rep, class Period>
@@ -44,6 +59,8 @@ public:
         if (items_.empty()) return std::nullopt;
         T item = std::move(items_.front());
         items_.pop_front();
+        lock.unlock();
+        space_cv_.notify_one();
         return item;
     }
 
@@ -54,6 +71,7 @@ public:
             closed_ = true;
         }
         cv_.notify_all();
+        space_cv_.notify_all();
     }
 
     [[nodiscard]] bool closed_and_empty() const {
@@ -76,7 +94,8 @@ public:
 private:
     const std::size_t capacity_;
     mutable std::mutex mu_;
-    std::condition_variable cv_;
+    std::condition_variable cv_;        // signalled when an item arrives
+    std::condition_variable space_cv_;  // signalled when room frees up
     std::deque<T> items_;
     bool closed_ = false;
     std::uint64_t dropped_ = 0;
