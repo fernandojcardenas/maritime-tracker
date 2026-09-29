@@ -35,16 +35,19 @@ def main():
     for n in range(args.connections):
         conn, _ = srv.accept()
         end = pos + args.per_connection
-        while pos < end and pos < len(lines):
-            batch = lines[pos:pos + args.batch]
-            chunk = b"\n".join(batch) + b"\n"
-            half = len(chunk) // 2
-            conn.sendall(chunk[:half])
-            time.sleep(0.002)
-            conn.sendall(chunk[half:])
-            pos += len(batch)
-            sent += len(batch)
-            time.sleep(args.interval)
+        try:
+            while pos < end and pos < len(lines):
+                batch = lines[pos:pos + args.batch]
+                chunk = b"\n".join(batch) + b"\n"
+                half = len(chunk) // 2
+                conn.sendall(chunk[:half])
+                time.sleep(0.002)
+                conn.sendall(chunk[half:])
+                pos += len(batch)
+                sent += len(batch)
+                time.sleep(args.interval)
+        except (BrokenPipeError, ConnectionResetError):
+            print(f"connection {n + 1}: client disconnected", flush=True)
         conn.close()  # drop the connection mid-stream
         print(f"connection {n + 1}: closed after {sent} lines total", flush=True)
         time.sleep(0.3)

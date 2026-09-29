@@ -1,0 +1,80 @@
+name: Live feed run
+
+# Manual run of mt-ingest against the Norwegian Coastal Administration's open
+# AIS feed (raw NMEA over TCP, NLOD licence). Checks the feed is reachable,
+# records for the requested time, proves the recording replays
+# deterministically, and uploads the recording and log.
+on:
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Seconds to record"
+        default: "3600"
+        required: true
+      feed:
+        description: "host:port of the NMEA feed"
+        default: "153.44.253.27:5631"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      FEED: ${{ inputs.feed }}
+      DURATION: ${{ inputs.duration }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check the feed is reachable (15 s)
+        run: |
+          host=${FEED%:*}; port=${FEED##*:}
+          if timeout 15 bash -c "exec 3<>/dev/tcp/$host/$port && head -c 400 <&3" > first-bytes.txt; then
+            echo "Connected to $FEED. First bytes:"; cat first-bytes.txt; echo
+          else
+            echo "::error::Could not connect to $FEED within 15 s from this runner."
+            exit 1
+          fi
+
+      - name: Build mt-ingest
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMT_BUILD_TESTS=OFF
+          cmake --build build --target mt-ingest
+
+      - name: Record the live feed
+        run: |
+          ./build/mt-ingest --tcp "$FEED" --duration "$DURATION" --record recordings --stats-every 60 2>&1 | tee ingest.log
+
+      - name: Check the run and replay the recording twice
+        run: |
+          grep -q "^lines" ingest.log
+          lines=$(awk '/^lines/ {print $2}' ingest.log | tail -1)
+          msgs=$(awk '/^messages/ {print $2}' ingest.log | tail -1)
+          echo "lines $lines, messages $msgs"
+          test "$lines" -gt 0 && test "$msgs" -gt 0
+          cat recordings/*.nmea > all.nmea
+          a=$(./build/mt-ingest --replay all.nmea --speed 0 --json 2>/dev/null | sha256sum)
+          b=$(./build/mt-ingest --replay all.nmea --speed 0 --json 2>/dev/null | sha256sum)
+          echo "replay 1: $a"; echo "replay 2: $b"
+          test "$a" = "$b"
+          {
+            echo "## Live feed run: $FEED for ${DURATION} s"
+            echo
+            echo '```'
+            tail -n 25 ingest.log
+            echo '```'
+            echo
+            echo "Recording: $(wc -l < all.nmea) lines in $(ls recordings | wc -l) file(s). Two replays gave identical decoded output ($a)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: live-run
+          path: |
+            ingest.log
+            first-bytes.txt
+            recordings/
