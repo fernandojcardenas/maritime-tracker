@@ -1,0 +1,52 @@
+# Collision risk on the one-hour live recording, 2026-09-29
+#
+# Source:   BarentsWatch Live AIS API (Norwegian open AIS data, NLOD licence),
+#           recorded by Live feed run #3 (see m2-live-run-2026-09-29.txt).
+#           Contains data under the Norwegian licence for Open Government data
+#           (NLOD) made available by the Norwegian Coastal Administration.
+# Command:  mt-ingest --replay live.jsonl --format barentswatch --speed 0 \
+#                     --listening-since 1790689162 --encounters encounters.jsonl
+#
+# An encounter is a pair's first minute at risk: both at 2 kn or more, within
+# 6 nm, closing to within 0.5 nm within 20 minutes. Two replays gave identical
+# encounters.
+#
+# --- final lines of mt-ingest's output ---
+--- final ---
+lines            132270
+messages         132270
+unique MMSIs     3752
+no position      0
+invalid records  0
+tracker          4064 tracks started, 127927 updates, 279 gate rejections, 22 restarts, 0 duplicates, 0 out of order
+anomalies        2 impossible speed, 0 position jumps, 13 gaps, 0 identity conflicts
+not flagged      290 silences begun before listening, 19 coverage returned, 0 network outage, 36 not heard regularly; 141 SAR aircraft reports
+encounters       2020 (pairs first at risk: CPA within 0.5 nm within 20 min, both under way)
+queue dropped    0
+replay lines 132270, timestamped 0, gaps shortened 0, backwards timestamps 0
+# --- encounters by type ---
+crossing     938
+overtaking   450
+head_on      337
+unclear      295
+# --- first 20 of 2020 encounters (encounters.jsonl) ---
+{"t":1790689200,"mmsi_a":211913000,"mmsi_b":257036200,"type":"overtaking","role_a":"stand_on","role_b":"give_way","range_m":3435.594578,"tcpa_s":531.1143561,"dcpa_m":188.5822587}
+{"t":1790689200,"mmsi_a":230357000,"mmsi_b":257626000,"type":"overtaking","role_a":"stand_on","role_b":"give_way","range_m":995.6501473,"tcpa_s":154.6312424,"dcpa_m":839.2121497}
+{"t":1790689200,"mmsi_a":231925000,"mmsi_b":257088660,"type":"overtaking","role_a":"give_way","role_b":"stand_on","range_m":698.8367522,"tcpa_s":4.954817781,"dcpa_m":697.6826495}
+{"t":1790689200,"mmsi_a":249097000,"mmsi_b":258196000,"type":"overtaking","role_a":"stand_on","role_b":"give_way","range_m":117.0628128,"tcpa_s":88.15094609,"dcpa_m":116.0336315}
+{"t":1790689200,"mmsi_a":249587000,"mmsi_b":259004230,"type":"head_on","role_a":"give_way","role_b":"give_way","range_m":6152.051269,"tcpa_s":603.459576,"dcpa_m":667.4273639}
+{"t":1790689200,"mmsi_a":255915691,"mmsi_b":258327000,"type":"head_on","role_a":"give_way","role_b":"give_way","range_m":2935.193234,"tcpa_s":264.5947881,"dcpa_m":397.2720327}
+{"t":1790689200,"mmsi_a":257001960,"mmsi_b":257063180,"type":"crossing","role_a":"give_way","role_b":"stand_on","range_m":1712.695193,"tcpa_s":1056.066483,"dcpa_m":90.11311635}
+{"t":1790689200,"mmsi_a":257012330,"mmsi_b":257132900,"type":"crossing","role_a":"stand_on","role_b":"give_way","range_m":7249.191207,"tcpa_s":1125.152063,"dcpa_m":310.3185681}
+{"t":1790689200,"mmsi_a":257015600,"mmsi_b":259033550,"type":"unclear","role_a":"give_way","role_b":"give_way","range_m":617.6808037,"tcpa_s":6.772273962,"dcpa_m":568.782704}
+{"t":1790689200,"mmsi_a":257015600,"mmsi_b":259560000,"type":"crossing","role_a":"stand_on","role_b":"give_way","range_m":11032.09854,"tcpa_s":546.8831876,"dcpa_m":665.5915172}
+{"t":1790689200,"mmsi_a":257017390,"mmsi_b":257807600,"type":"unclear","role_a":"give_way","role_b":"give_way","range_m":2988.090728,"tcpa_s":310.5274501,"dcpa_m":857.9062887}
+{"t":1790689200,"mmsi_a":257017390,"mmsi_b":257845800,"type":"crossing","role_a":"give_way","role_b":"stand_on","range_m":3102.328846,"tcpa_s":381.4913833,"dcpa_m":42.42426109}
+{"t":1790689200,"mmsi_a":257022340,"mmsi_b":257089390,"type":"crossing","role_a":"give_way","role_b":"stand_on","range_m":570.4901496,"tcpa_s":81.98188673,"dcpa_m":206.5984421}
+{"t":1790689200,"mmsi_a":257022700,"mmsi_b":257749000,"type":"head_on","role_a":"give_way","role_b":"give_way","range_m":2932.857429,"tcpa_s":321.5044521,"dcpa_m":182.077528}
+{"t":1790689200,"mmsi_a":257024820,"mmsi_b":257101490,"type":"unclear","role_a":"give_way","role_b":"give_way","range_m":1134.361031,"tcpa_s":81.64944803,"dcpa_m":378.3922913}
+{"t":1790689200,"mmsi_a":257030310,"mmsi_b":258032580,"type":"crossing","role_a":"give_way","role_b":"stand_on","range_m":10287.87557,"tcpa_s":628.6703426,"dcpa_m":580.1295685}
+{"t":1790689200,"mmsi_a":257039490,"mmsi_b":259612000,"type":"crossing","role_a":"give_way","role_b":"stand_on","range_m":3577.063326,"tcpa_s":358.733057,"dcpa_m":288.1490119}
+{"t":1790689200,"mmsi_a":257042930,"mmsi_b":259344000,"type":"overtaking","role_a":"stand_on","role_b":"give_way","range_m":2202.121794,"tcpa_s":431.8209097,"dcpa_m":97.84374114}
+{"t":1790689200,"mmsi_a":257046470,"mmsi_b":257923000,"type":"head_on","role_a":"give_way","role_b":"give_way","range_m":6404.24725,"tcpa_s":813.1164816,"dcpa_m":249.6027621}
+{"t":1790689200,"mmsi_a":257053350,"mmsi_b":877228863,"type":"overtaking","role_a":"stand_on","role_b":"give_way","range_m":550.3990516,"tcpa_s":655.183572,"dcpa_m":444.8528735}

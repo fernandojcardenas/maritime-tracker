@@ -9,7 +9,7 @@ clean tracks, flags suspicious behaviour and scores collision risk.
 It runs entirely on public data: no radio hardware is needed. A Raspberry Pi
 with an RTL-SDR receiver can be added later as one more input.
 
-**Status:** milestones 1 (decoder), 2 (live ingest and replay), 3 (tracker) and 4 (anomalies) done. See the [roadmap](docs/roadmap.md).
+**Status:** milestones 1 (decoder), 2 (live ingest and replay), 3 (tracker), 4 (anomalies) and 5 (collision risk) done. See the [roadmap](docs/roadmap.md).
 
 ## Why
 
@@ -183,19 +183,67 @@ tools/evaluate_anomalies.sh build/mt-anomaly data/
 tools/barentswatch_stream.sh | mt-ingest --stdin --format barentswatch --anomalies anomalies.jsonl
 ```
 
+## Collision risk (M5)
+
+Every minute, every pair of vessels under way gets a closest point of
+approach (CPA) and time to it (TCPA). If they will pass within 0.5 nm within
+20 minutes, the pair is classified under the COLREGs steering rules and the
+vessel that has to keep out of the way is named
+([ADR 0005](docs/adr/0005-collision-risk.md)):
+
+| Encounter | Who keeps out of the way |
+|---|---|
+| Overtaking (Rule 13): coming up from more than 22.5° abaft the beam | The overtaking vessel |
+| Head-on (Rule 14): nearly reciprocal courses, each nearly ahead of the other | Both, to starboard |
+| Crossing (Rule 15) | The vessel that has the other on her starboard side |
+
+There is no public record of who *should* have given way, so the roles were
+checked against what vessels actually did. For each developing encounter
+(first at risk at least 1 nm apart and 4 minutes out), each vessel is
+credited with how much its own manoeuvring opened the passing distance,
+compared with holding its course and speed:
+
+| Encounters (Danish AIS, 2026-04-22) | Give-way vessel opened the distance more than the stand-on vessel |
+|---|---:|
+| Overtaking, Øresund | 15 of 17 |
+| Crossing, commercial vessels, Great Belt and Skagen | 7 of 9 (9 of 9 within 0.25 nm) |
+| Crossing, all vessel types, Great Belt and Skagen | 12 of 27 |
+| Crossing, Øresund | 42 of 77 |
+
+Overtaking and open-water crossings between commercial vessels behave as
+the rules say. With fishing vessels, pilot boats and tugs included, crossings
+are near a coin toss, which fits Rule 18: vessels fishing or restricted in
+their ability to manoeuvre have right of way whatever the geometry. That
+split was added after seeing the data and is labelled as such. Øresund
+crossings are mostly harbour boats and a ferry route where local practice
+decides. The predicted CPA is within 41 m (median) of the real pass at 0–2
+minutes and 156 m at 2–5 minutes; further out the vessels' own avoiding
+action is most of the difference. The [collision-risk evaluation](docs/collision-risk-evaluation.md)
+has the method, all the tables and the limitations.
+
+`mt-ingest` assesses risk live: the one-hour Norwegian recording yields
+2,020 encounters, and the whole hour (tracking, anomalies and risk) replays
+in 1.4 seconds.
+
+```
+tools/evaluate_collision_risk.sh build/mt-risk data/
+tools/barentswatch_stream.sh | mt-ingest --stdin --format barentswatch --encounters encounters.jsonl
+```
+
 ## How it's tested
 
 | Check | What it proves | Where |
 |---|---|---|
-| 101 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring; JSON records and ISO 8601 times; every anomaly rule and its exceptions (outages, coverage returning, aircraft, repeated transmissions) | `tests/` |
+| 112 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring; JSON records and ISO 8601 times; every anomaly rule and its exceptions (outages, coverage returning, aircraft, repeated transmissions); CPA/TCPA, the COLREGs sectors on both sides of each boundary, and role symmetry over 20,000 random pairs | `tests/` |
 | Tracker evaluation on real data | Held-out prediction error against two baselines, and outlier rejection; fails CI on regression | `tools/evaluate_tracker.sh`, `evaluate` workflow |
 | Anomaly evaluation on real data | Planted anomalies found and false alarms on four slices of Danish traffic; fails CI on regression | `tools/evaluate_anomalies.sh`, `evaluate` workflow |
+| Collision-risk evaluation on real data | Predicted CPA against the real pass, and COLREGs roles against what vessels did; fails CI on regression | `tools/evaluate_collision_risk.sh`, `evaluate` workflow |
 | Fake-feed TCP tests | Split lines, peer disconnect, silent connection, refused connect, prompt shutdown, against a real socket on loopback | `tests/tcp_source_test.cpp` |
 | Recorded-traffic test | Exact counts on 85,194 lines of real AIS, including its malformed sentences | `tests/capture_test.cpp` |
 | Cross-check against pyais | Every decoded field of 76,130 messages matches an independent open-source decoder | `tools/crosscheck.py` |
 | ASan + UBSan | No memory errors or undefined behaviour, with GCC and Clang | CI `test` job |
 | ThreadSanitizer | No data races in the reader thread, queue and TCP client; threaded tests repeated 20 times | CI `tsan` job |
-| Six libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, the line framer under arbitrary TCP chunking, and the parsers for downloaded CSV and streamed JSON; arbitrary report sequences into the anomaly detector | `fuzz/`, CI `fuzz` job |
+| Seven libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, the line framer under arbitrary TCP chunking, and the parsers for downloaded CSV and streamed JSON; arbitrary report sequences into the anomaly detector; arbitrary positions and velocities into collision risk | `fuzz/`, CI `fuzz` job |
 | Live-API bridge test | Token, stream, token expiry, reconnect and clean shutdown against a fake server; the secret must not appear in any output; a 200,000-line replay must lose nothing | CI `barentswatch-bridge` job |
 | Live-data test | 5,000 real records from the one-hour live run parse, track and pass the anomaly rules with pinned counts | `tests/barentswatch_test.cpp`, `tests/anomaly_test.cpp` |
 | clang-tidy | bugprone, cert, performance, modernize and readability checks, warnings as errors | `.clang-tidy`, CI `lint` job |
@@ -224,15 +272,16 @@ with libFuzzer), `-DMT_WARNINGS_AS_ERRORS=ON`.
 ## Layout
 
 ```
-include/maritime/   public headers: nmea/, ais/, ingest/, track/, anomaly/, util/
-src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder), tracker, anomaly detector
+include/maritime/   public headers: nmea/, ais/, ingest/, track/, anomaly/, risk/, util/
+src/                parser, bit reader, message decoders, stream decoder, ingest (TCP, replay, recorder), tracker, anomaly detector, collision risk
 apps/mt-decode/     command-line decoder
 apps/mt-ingest/     live/replay ingest with recording
 apps/mt-track/      tracker evaluation on recorded traffic
 apps/mt-anomaly/    anomaly detection and evaluation on recorded traffic
+apps/mt-risk/       collision-risk evaluation on recorded traffic
 tests/              unit tests and the recorded-traffic test
 fuzz/               libFuzzer targets
-tools/              cross-check against pyais, fake TCP feed and fake live API, live stream script, data fetch, tracker and anomaly evaluations
+tools/              cross-check against pyais, fake TCP feed and fake live API, live stream script, data fetch, tracker, anomaly and collision-risk evaluations
 testdata/           recorded AIS traffic (MIT, from pyais) and 5,000 live records (NLOD)
 docs/               roadmap, data sources, architecture decisions, evidence from real runs
 ```
