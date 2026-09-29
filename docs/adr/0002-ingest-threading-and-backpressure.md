@@ -47,3 +47,12 @@ record per line). The HTTPS part is delegated to `curl` in
 queue. This keeps TLS and credential handling out of the C++ service, at the
 cost of one extra process. The JSON parser is nlohmann/json (pinned by
 SHA-256), fuzzed like the other input parsers.
+
+## Addendum, 2026-09-29: replay must not share the live drop policy
+
+The first one-hour live run showed that replaying a recording twice gave
+different output. File replay used the same drop-oldest `push()` as the live
+sources, so once a file outgrew the queue (65,536 lines) lines were dropped,
+a different set on each run. Drop-oldest is right for a live socket and wrong
+for a file. Replay now uses `push_wait()`, which blocks the reader until the
+decoder frees space. Live sources still drop and count.

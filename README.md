@@ -9,7 +9,7 @@ clean tracks, flags suspicious behaviour and scores collision risk.
 It runs entirely on public data: no radio hardware is needed. A Raspberry Pi
 with an RTL-SDR receiver can be added later as one more input.
 
-**Status:** milestones 1 (decoder) and 3 (tracker) done; milestone 2 (live ingest and replay) built and tested, with the one-hour run against live data still to do. See the [roadmap](docs/roadmap.md).
+**Status:** milestones 1 (decoder), 2 (live ingest and replay) and 3 (tracker) done. See the [roadmap](docs/roadmap.md).
 
 ## Why
 
@@ -50,8 +50,21 @@ by type: 1=61374 2=1973 3=8785 4=4043 5=2221 6=435 8=1082 9=27 10=7 11=28 16=1 1
 
 ## Ingest and replay (M2)
 
-`mt-ingest` reads a live TCP feed or a recorded file, decodes it, and can
-record what it receives for later replay.
+`mt-ingest` reads a live feed or a recorded file, decodes it, tracks vessels,
+and can record what it receives for later replay.
+
+**One hour of live data** (2026-09-29, 13:39–14:39 UTC, BarentsWatch Live AIS
+API, run on GitHub Actions): 132,270 records from 3,752 vessels along the
+Norwegian coast, the Barents Sea and Svalbard, about 37 per second, with 0
+invalid records and 0 dropped. The tracker ran live on the stream: 4,064 tracks,
+127,927 updates, 279 gate rejections. Replaying the recording gives identical
+output every time and reproduces those tracker numbers exactly
+([run log](docs/evidence/m2-live-run-2026-09-29.txt)).
+
+That run also found a bug. Replaying the hour twice gave two different results,
+because file replay was sharing the live feed's drop-oldest queue and silently
+lost lines once a file outgrew it. Replay now waits for queue space instead, and
+CI replays a 200,000-line file on every push to keep it that way.
 
 ```
 mt-ingest --tcp 153.44.253.27:5631 --record recordings/        # raw NMEA over TCP, recorded hourly
@@ -74,7 +87,8 @@ line limits as the TCP client, so no TLS library is needed in the service.
 - **Bounded everywhere.** Lines over 1,024 bytes are discarded by the framer,
   and a fixed-size queue sits between the network thread and the decoder. If
   decoding falls behind, the oldest lines are dropped and counted instead of
-  stalling the socket. See [ADR 0002](docs/adr/0002-ingest-threading-and-backpressure.md).
+  stalling the socket. File replay waits for space instead, so it never loses
+  a line. See [ADR 0002](docs/adr/0002-ingest-threading-and-backpressure.md).
 - **Recording and replay.** Recordings rotate hourly and every line gets a
   receive timestamp. Replay paces lines by those timestamps at any speed,
   shortens long outages, and never rewinds on out-of-order timestamps. Time is
@@ -123,7 +137,7 @@ tools/fetch_dk_slice.sh data/oresund.csv          # 830 MB download, SHA-256 che
 
 | Check | What it proves | Where |
 |---|---|---|
-| 82 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring; JSON records and ISO 8601 times | `tests/` |
+| 85 tests (GoogleTest) | Every parser error path, bit-level field decoding, fragment reassembly and eviction; line framing, queue overflow, replay pacing, recorder rotation; geodesy, filter convergence and covariance health, gating, restarts, re-anchoring; JSON records and ISO 8601 times | `tests/` |
 | Tracker evaluation on real data | Held-out prediction error against two baselines, and outlier rejection; fails CI on regression | `tools/evaluate_tracker.sh`, `evaluate` workflow |
 | Fake-feed TCP tests | Split lines, peer disconnect, silent connection, refused connect, prompt shutdown, against a real socket on loopback | `tests/tcp_source_test.cpp` |
 | Recorded-traffic test | Exact counts on 85,194 lines of real AIS, including its malformed sentences | `tests/capture_test.cpp` |
@@ -131,7 +145,8 @@ tools/fetch_dk_slice.sh data/oresund.csv          # 830 MB download, SHA-256 che
 | ASan + UBSan | No memory errors or undefined behaviour, with GCC and Clang | CI `test` job |
 | ThreadSanitizer | No data races in the reader thread, queue and TCP client; threaded tests repeated 20 times | CI `tsan` job |
 | Five libFuzzer targets | Arbitrary bytes into the stream decoder, the message decoders, the line framer under arbitrary TCP chunking, and the parsers for downloaded CSV and streamed JSON | `fuzz/`, CI `fuzz` job |
-| Live-API bridge test | Token, stream, token expiry, reconnect and clean shutdown against a fake server; the secret must not appear in any output | CI `barentswatch-bridge` job |
+| Live-API bridge test | Token, stream, token expiry, reconnect and clean shutdown against a fake server; the secret must not appear in any output; a 200,000-line replay must lose nothing | CI `barentswatch-bridge` job |
+| Live-data test | 5,000 real records from the one-hour live run parse and track with pinned counts | `tests/barentswatch_test.cpp` |
 | clang-tidy | bugprone, cert, performance, modernize and readability checks, warnings as errors | `.clang-tidy`, CI `lint` job |
 
 The cross-check found four real problems during development, all fixed:
