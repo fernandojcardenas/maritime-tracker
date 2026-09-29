@@ -137,19 +137,24 @@ std::optional<Assessment> assess(const Motion& a, const Motion& b, const Params&
 }
 
 std::vector<PairAssessment> find_encounters(std::vector<Motion> vessels, const Params& p) {
-    std::sort(vessels.begin(), vessels.end(), [](const Motion& x, const Motion& y) { return x.lat_deg < y.lat_deg; });
-    const double window_deg = p.max_range_m / (track::kEarthRadiusM * std::numbers::pi / 180.0);
+    // Only vessels under way can be at risk; then only pairs within range.
+    std::erase_if(vessels, [&](const Motion& m) { return speed_kn(m) < p.min_speed_kn; });
+    std::vector<spatial::Point> points(vessels.size());
+    std::transform(vessels.begin(), vessels.end(), points.begin(),
+                   [](const Motion& m) { return spatial::Point{m.lat_deg, m.lon_deg}; });
+    // assess() measures range in a flat local frame, which can differ from the
+    // great-circle distance by a few centimetres at 6 nm: ask the index for a
+    // slightly wider radius and let assess() decide.
+    const auto candidates = spatial::pairs_within(points, p.max_range_m * 1.001 + 1.0, p.index);
     std::vector<PairAssessment> out;
-    for (std::size_t i = 0; i < vessels.size(); ++i) {
-        for (std::size_t j = i + 1; j < vessels.size() && vessels[j].lat_deg - vessels[i].lat_deg <= window_deg; ++j) {
-            const Motion& x = vessels[i];
-            const Motion& y = vessels[j];
-            if (x.mmsi == y.mmsi) continue;
-            const bool x_first = x.mmsi < y.mmsi;
-            const Motion& a = x_first ? x : y;
-            const Motion& b = x_first ? y : x;
-            if (auto r = assess(a, b, p)) out.push_back({a.mmsi, b.mmsi, *r});
-        }
+    for (const auto& [i, j] : candidates) {
+        const Motion& x = vessels[i];
+        const Motion& y = vessels[j];
+        if (x.mmsi == y.mmsi) continue;
+        const bool x_first = x.mmsi < y.mmsi;
+        const Motion& a = x_first ? x : y;
+        const Motion& b = x_first ? y : x;
+        if (auto r = assess(a, b, p)) out.push_back({a.mmsi, b.mmsi, *r});
     }
     std::sort(out.begin(), out.end(), [](const PairAssessment& l, const PairAssessment& r) {
         return l.mmsi_a != r.mmsi_a ? l.mmsi_a < r.mmsi_a : l.mmsi_b < r.mmsi_b;

@@ -19,6 +19,8 @@
 #include <string_view>
 #include <vector>
 
+#include "maritime/spatial/pairs.hpp"
+
 namespace maritime::risk {
 
 inline constexpr double kNauticalMileM = 1852.0;
@@ -67,6 +69,9 @@ struct Params {
     // right ahead of the other.
     double head_on_course_deg = 10.0;
     double head_on_bearing_deg = 22.5;
+    // How find_encounters finds the pairs within max_range_m (M6; all methods
+    // give the same pairs, see docs/spatial-index-benchmark.md).
+    spatial::Method index = spatial::Method::Grid;
 };
 
 struct Assessment {
@@ -92,8 +97,8 @@ struct PairAssessment {
 };
 
 // Every pair at risk among `vessels` (one entry per MMSI, all at the same
-// moment). A sweep over latitude limits the pairs examined to those within
-// max_range_m north-south of each other.
+// moment). Vessels under way are indexed (Params::index) so only pairs within
+// max_range_m of each other are assessed.
 [[nodiscard]] std::vector<PairAssessment> find_encounters(std::vector<Motion> vessels, const Params& p = {});
 
 }  // namespace maritime::risk
