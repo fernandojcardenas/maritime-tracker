@@ -10,3 +10,4 @@ timeout-*
 .vscode/
 .idea/
 __pycache__/
+data/

@@ -66,7 +66,7 @@ jobs:
           python3 tools/crosscheck.py testdata/pyais-nmea-sample.nmea mt.jsonl
 
   fuzz:
-    name: Fuzz (libFuzzer, 3 targets, 60 s each)
+    name: Fuzz (libFuzzer, 4 targets, 60 s each)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -77,7 +77,7 @@ jobs:
           CXX: clang++
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMT_BUILD_TESTS=OFF -DMT_BUILD_FUZZERS=ON
-          cmake --build build --target fuzz_decoder fuzz_payload fuzz_framer
+          cmake --build build --target fuzz_decoder fuzz_payload fuzz_framer fuzz_dk_csv
       - name: Fuzz the stream decoder, seeded with recorded traffic
         run: |
           mkdir -p corpus && head -n 2000 testdata/pyais-nmea-sample.nmea | split -l 20 - corpus/seed-
@@ -90,6 +90,11 @@ jobs:
         run: |
           mkdir -p corpus-framer && head -c 20000 testdata/pyais-nmea-sample.nmea > corpus-framer/seed
           ./build/fuzz_framer -max_total_time=60 -max_len=4096 corpus-framer
+      - name: Fuzz the Danish CSV row parser
+        run: |
+          mkdir -p corpus-dk
+          printf '22/04/2026 12:00:00,Class A,219000001,55.700000,12.650000,12.4,80.9,77,Passenger' > corpus-dk/seed
+          ./build/fuzz_dk_csv -max_total_time=60 -max_len=512 corpus-dk
 
   lint:
     name: clang-tidy
