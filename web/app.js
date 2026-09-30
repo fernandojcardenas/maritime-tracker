@@ -49,6 +49,17 @@
   var dataTime = 0;
 
   function el(id) { return document.getElementById(id); }
+
+  // Zooms to `bounds`, keeping it clear of the panel (right side on wide
+  // screens, bottom on narrow ones).
+  function focus(bounds, maxZoom) {
+    var wide = window.innerWidth > 700;
+    map.fitBounds(bounds, {
+      paddingTopLeft: [60, 60],
+      paddingBottomRight: wide ? [380, 60] : [60, Math.round(window.innerHeight * 0.45)],
+      maxZoom: maxZoom
+    });
+  }
   function fmt(n) { return Number(n).toLocaleString('en-US'); }
   function utc(t) { return new Date(t * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'; }
 
@@ -181,7 +192,7 @@
       item(el_e, (TYPE[e.type] || e.type) + ' · ' + e.a + ' / ' + e.b, encounterDetail(e), function () {
         var a = vessels.get(e.a);
         var b = vessels.get(e.b);
-        if (a && b) map.fitBounds([[a.row[1], a.row[2]], [b.row[1], b.row[2]]], { padding: [80, 80], maxZoom: 11 });
+        if (a && b) focus([[a.row[1], a.row[2]], [b.row[1], b.row[2]]], 11);
       });
     });
     if (!encounters.length) empty(el_e, 'None');
@@ -191,7 +202,7 @@
     anomalies.slice(-50).reverse().forEach(function (a) {
       item(el_a, (KIND[a.kind] || a.kind) + ' · ' + a.mmsi,
         anomalyDetail(a) + ' · ' + utc(a.t).slice(11, 16), function () {
-          map.setView([a.lat, a.lon], Math.max(map.getZoom(), 10));
+          focus([[a.lat, a.lon], [a.lat, a.lon]], Math.max(map.getZoom(), 10));
         });
     });
     if (!anomalies.length) empty(el_a, 'None');
