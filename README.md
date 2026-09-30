@@ -9,7 +9,13 @@ clean tracks, flags suspicious behaviour and scores collision risk.
 It runs entirely on public data: no radio hardware is needed. A Raspberry Pi
 with an RTL-SDR receiver can be added later as one more input.
 
-**Status:** milestones 1 (decoder), 2 (live ingest and replay), 3 (tracker), 4 (anomalies), 5 (collision risk), 6 (spatial index) and 7 (live map, WebSocket API and Docker image) done. See the [roadmap](docs/roadmap.md).
+![The live map: about 3,400 vessels along the Norwegian coast, pairs at risk of collision and anomaly flags](docs/images/live-map-overview.png)
+
+*The live map (M7) during a replay of one real hour of Norwegian AIS: every
+vessel the tracker holds, pairs at risk of collision in orange, anomaly
+flags in red. [More screenshots](#what-the-map-shows).*
+
+**Status:** complete. All seven milestones are done: decoder, live ingest and replay, tracker, anomalies, collision risk, spatial index, and the live map with its WebSocket API and Docker image. See the [roadmap](docs/roadmap.md).
 
 ## Why
 
@@ -292,6 +298,18 @@ docker run --rm -p 8080:8080 -e BW_CLIENT_ID -e BW_CLIENT_SECRET maritime-tracke
 
 [docs/live-map.md](docs/live-map.md) has the protocol, the limits, phone
 layout and how it's tested.
+
+### What the map shows
+
+All four screenshots are from replays of the recorded live hour
+([how they were captured](docs/evidence/m7-live-map-run-2026-09-29.txt)).
+
+| | |
+|---|---|
+| ![Oslofjord traffic](docs/images/live-map-oslofjord.png) | ![A crossing pair at risk](docs/images/live-map-encounter.png) |
+| **Oslofjord at 14:09 UTC.** Traffic in the fjord and Oslo harbour; the orange pairs at the top are at risk now, listed in the panel with who gives way. | **One encounter, clicked in the panel.** A tanker and a tug north-west of Bergen, predicted to pass 0.33 nm apart within a minute; by the crossing geometry the tug (257351740) gives way. A tug at work can have right of way whatever the geometry says (Rule 18), which the roles don't know about: one of the limits in the [collision-risk evaluation](docs/collision-risk-evaluation.md). |
+| ![A flagged reporting gap](docs/images/live-map-anomaly.png) | ![Phone layout](docs/images/live-map-phone.png) |
+| **One anomaly, clicked in the panel.** A passenger vessel in Norddalsfjorden went silent for 11 minutes and is flagged red. A gap is a prompt to look, not proof of anything: inside steep fjords, radio shadow is a common cause. | **Phone width.** The panel moves to the bottom; the same live feed. |
 
 ## How it's tested
 

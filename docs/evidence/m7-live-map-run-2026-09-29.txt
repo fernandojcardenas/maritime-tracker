@@ -67,3 +67,32 @@ encounters       0 (pairs first at risk: CPA within 0.5 nm within 20 min, both u
 queue dropped    0
 replay lines 147, timestamped 147, gaps shortened 0, backwards timestamps 101
 live map         8 connections, 1 map viewers, 0 dropped as too slow, 0 protocol errors, 1895608 bytes sent
+
+3. Replay used for the gallery screenshots
+------------------------------------------
+docs/images/live-map-oslofjord.png, live-map-encounter.png and
+live-map-anomaly.png were captured in headless Chromium (Playwright,
+1280x800) from this replay, by opening the page and clicking entries in the
+panel (the anomaly and encounter views) or opening a view link (the
+Oslofjord view, #59.45,10.55,9). The browser console showed no errors.
+
+  mt-ingest --replay norway-live-2026-09-29.jsonl --format barentswatch \
+            --speed 10 --serve 8080 --listening-since 1790689162
+
+mt-ingest output (stderr), stopped after about 3.5 minutes:
+
+live map: http://127.0.0.1:8080/
+[204.8 s] lines 76150  msgs 76150  msg/s 371.8  vessels 3707  tracks 3650  gate-rejects 169  anomalies 6  encounters 1120  queue-dropped 0  map-viewers 0
+--- final ---
+lines            76150
+messages         76150
+unique MMSIs     3707
+no position      0
+invalid records  0
+tracker          3986 tracks started, 71995 updates, 169 gate rejections, 13 restarts, 0 duplicates, 0 out of order
+anomalies        2 impossible speed, 0 position jumps, 4 gaps, 0 identity conflicts
+not flagged      274 silences begun before listening, 0 coverage returned, 0 network outage, 6 not heard regularly; 80 SAR aircraft reports
+encounters       1120 (pairs first at risk: CPA within 0.5 nm within 20 min, both under way)
+queue dropped    0
+replay lines 76150, timestamped 76150, gaps shortened 0, backwards timestamps 44742
+live map         42 connections, 6 map viewers, 0 dropped as too slow, 0 protocol errors, 13870249 bytes sent

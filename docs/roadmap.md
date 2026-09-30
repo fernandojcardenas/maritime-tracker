@@ -6,6 +6,10 @@ hardware: all input comes from public AIS data. A Raspberry Pi with an RTL-SDR
 receiver can be added later as one more input, producing the same NMEA
 sentences.
 
+**Status: complete (2026-09-29).** All seven milestones are done, each
+verified on GitHub (CI and the evaluation workflow green, published numbers
+reproduced).
+
 | Milestone | What it adds | Status |
 |---|---|---|
 | M1 Decoder | NMEA/AIVDM parser, tag blocks, multi-fragment reassembly, message types 1–3, 5, 18, 19, 24; unit tests, a recorded-traffic test, a cross-check against an independent decoder, two fuzz targets | Done |
@@ -16,5 +20,11 @@ sentences.
 | M6 Spatial index | Uniform grid vs k-d tree for neighbour queries, with benchmarks and profiler output | Done ([benchmark](spatial-index-benchmark.md)): grid chosen, 4x faster than the latitude sweep at a million vessels; profiling found the output sort as the largest cost |
 | M7 API and map | WebSocket API and a browser map; Docker image; recorded demo from a real session | Done ([live map](live-map.md)): own HTTP/WebSocket server, snapshot then deltas (about 11 KB a second at real time), offline coastline; the Docker image replays a sample or goes live; demo recorded from the live hour |
 
-Later, optional: decode AIS directly from public IQ recordings (signal
-processing), and an RTL-SDR receiver as a live input.
+## Beyond M7 (optional)
+
+Not planned for a date; ideas in the order they would add the most:
+
+- Vessel names and ship types on the map (static messages are decoded but
+  not yet joined to tracks).
+- Decode AIS directly from public IQ recordings (signal processing).
+- An RTL-SDR receiver as a live input, producing the same NMEA sentences.

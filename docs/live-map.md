@@ -45,7 +45,7 @@ It runs as a non-root user.
   shows MMSI, speed and course.
 - The panel lists pairs at risk now (soonest first, with who gives way and
   the predicted closest approach) and recent anomalies. Clicking an entry
-  zooms to it.
+  zooms to it, keeping it clear of the panel.
 - The first view fits the middle 95% of vessels, so a few far-off satellite
   positions don't shrink the map. A view in the address, `#lat,lon,zoom`
   (for example `#60.35,5.1,9` for Bergen), opens there, and the address
@@ -57,6 +57,10 @@ It runs as a non-root user.
 | Overview | Phone width |
 |---|---|
 | ![Overview of the Norwegian coast](images/live-map-overview.png) | ![Phone-width layout](images/live-map-phone.png) |
+| **An encounter, clicked in the panel** | **An anomaly, clicked in the panel** |
+| ![A crossing pair at risk north-west of Bergen](images/live-map-encounter.png) | ![A reporting gap flagged in Norddalsfjorden](images/live-map-anomaly.png) |
+
+More views, with captions, are in the [README](../README.md#what-the-map-shows).
 
 The coastline is Natural Earth land (public domain), built by
 `tools/make_land.py` into `web/land.json` (1.7 MB): 1:10m detail in Nordic
