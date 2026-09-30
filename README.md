@@ -301,15 +301,22 @@ layout and how it's tested.
 
 ### What the map shows
 
-All four screenshots are from replays of the recorded live hour
+All screenshots are from replays of the recorded live hour
 ([how they were captured](docs/evidence/m7-live-map-run-2026-09-29.txt)).
 
-| | |
-|---|---|
-| ![Oslofjord traffic](docs/images/live-map-oslofjord.png) | ![A crossing pair at risk](docs/images/live-map-encounter.png) |
-| **Oslofjord at 14:09 UTC.** Traffic in the fjord and Oslo harbour; the orange pairs at the top are at risk now, listed in the panel with who gives way. | **One encounter, clicked in the panel.** A tanker and a tug north-west of Bergen, predicted to pass 0.33 nm apart within a minute; by the crossing geometry the tug (257351740) gives way. A tug at work can have right of way whatever the geometry says (Rule 18), which the roles don't know about: one of the limits in the [collision-risk evaluation](docs/collision-risk-evaluation.md). |
-| ![A flagged reporting gap](docs/images/live-map-anomaly.png) | ![Phone layout](docs/images/live-map-phone.png) |
-| **One anomaly, clicked in the panel.** A passenger vessel in Norddalsfjorden went silent for 11 minutes and is flagged red. A gap is a prompt to look, not proof of anything: inside steep fjords, radio shadow is a common cause. | **Phone width.** The panel moves to the bottom; the same live feed. |
+![Oslofjord traffic](docs/images/live-map-oslofjord.png)
+
+**Oslofjord at 14:09 UTC.** Traffic in the fjord and Oslo harbour; the orange pairs at the top are at risk now, listed in the panel with who gives way.
+
+![A crossing pair at risk north-west of Bergen](docs/images/live-map-encounter.png)
+
+**One encounter, clicked in the panel.** A tanker and a tug north-west of Bergen, predicted to pass 0.33 nm apart within a minute; by the crossing geometry the tug (257351740) gives way. A tug at work can have right of way whatever the geometry says (Rule 18), which the roles don't know about: one of the limits in the [collision-risk evaluation](docs/collision-risk-evaluation.md).
+
+![A reporting gap flagged in Norddalsfjorden](docs/images/live-map-anomaly.png)
+
+**One anomaly, clicked in the panel.** A passenger vessel in Norddalsfjorden went silent for 11 minutes and is flagged red. A gap is a prompt to look, not proof of anything: inside steep fjords, radio shadow is a common cause.
+
+On a phone the panel moves to the bottom; see [docs/live-map.md](docs/live-map.md#the-page).
 
 ## How it's tested
 
